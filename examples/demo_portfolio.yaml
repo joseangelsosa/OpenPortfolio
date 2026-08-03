@@ -1,0 +1,37 @@
+# Todos los nombres, identificadores, cantidades y precios de este archivo son ficticios.
+portfolio:
+  id: demo-eur
+  name: Cartera Ficticia Horizonte
+  base_currency: EUR
+
+instruments:
+  - id: demo-europe-etf
+    name: ETF Europa Ficticio
+    asset_type: ETF
+    currency: EUR
+    provider_symbols:
+      fake: FAKE-EUR-ETF
+      yfinance: EXSA.DE
+    active: true
+  - id: demo-us-stock
+    name: Acción Americana Ficticia
+    asset_type: STOCK
+    currency: USD
+    provider_symbols:
+      fake: FAKE-USD-STOCK
+      yfinance: AAPL
+    active: true
+
+positions:
+  - id: demo-position-eur
+    instrument_id: demo-europe-etf
+    quantity: "7.25"
+    as_of: "2026-01-02T16:00:00+00:00"
+  - id: demo-position-usd
+    instrument_id: demo-us-stock
+    quantity: "3.50"
+    as_of: "2026-01-02T16:00:00+00:00"
+
+fake_market_data:
+  FAKE-EUR-ETF: "42.40"
+  FAKE-USD-STOCK: "123.45"

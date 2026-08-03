@@ -40,6 +40,12 @@ Establecer una base mínima, mantenible y verificable para desarrollar la prueba
 
 ## Fase 1: cartera ficticia y precios
 
+### Estado actual
+
+En progreso. La primera vertical ya permite cargar y validar una cartera YAML completamente ficticia, modelar instrumentos, posiciones, cartera y cotizaciones con `Decimal`, consultar un proveedor offline determinista o el adaptador aislado de yfinance y mostrar valores por posición y totales separados por moneda.
+
+Siguen pendientes para completar los criterios de esta fase el contrato y la obtención de FX, la conversión trazable a EUR, un `PortfolioSnapshot` consolidado con estado de completitud, la representación JSON de resultados, la política completa de frescura y las pruebas de contrato del adaptador real. Hasta entonces no se considera terminada la Fase 1.
+
 ### Objetivo
 
 Cargar una cartera ficticia y valorarla con precios obtenidos mediante una interfaz sustituible de datos de mercado.

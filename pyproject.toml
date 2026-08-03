@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openportfolio"
+version = "0.1.0"
+description = "PoC local para observar una cartera de inversión ficticia"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "PyYAML>=6.0.2,<7",
+    "yfinance>=0.2.65,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4,<10",
+]
+
+[project.scripts]
+openportfolio = "openportfolio.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
