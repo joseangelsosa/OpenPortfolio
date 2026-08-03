@@ -114,11 +114,17 @@ def _instrument(raw: Any, index: int) -> Instrument:
     active = data.get("active", True)
     if not isinstance(active, bool):
         raise PortfolioConfigurationError(f"instruments[{index}].active debe ser booleano")
+    expected_currency = data.get("expected_currency", data.get("currency"))
+    if "expected_currency" in data and "currency" in data:
+        if data["expected_currency"] != data["currency"]:
+            raise PortfolioConfigurationError(
+                f"instruments[{index}] declara monedas incompatibles"
+            )
     return Instrument(
         id=_text(data.get("id"), f"instruments[{index}].id"),
         name=_text(data.get("name"), f"instruments[{index}].name"),
         asset_type=_text(data.get("asset_type"), f"instruments[{index}].asset_type"),
-        currency=_text(data.get("currency"), f"instruments[{index}].currency"),
+        currency=_text(expected_currency, f"instruments[{index}].expected_currency"),
         provider_symbols=symbols,
         active=active,
     )

@@ -28,15 +28,15 @@ También se puede indicar la configuración y el proveedor explícitamente:
 .venv/bin/openportfolio --portfolio examples/demo_portfolio.yaml --provider fake
 ```
 
-La primera configuración operativa no contiene posiciones, cantidades, precios de compra ni datos personales. NVDA y MSFT están activos; el ETF S&P 500, Alphabet y Nestlé permanecen inactivos porque sus símbolos exactos no aparecen documentados en el repositorio. Para consultar los precios activos y ejecutar la revisión real obligatoriamente en modo no notificable:
+La primera configuración operativa no contiene posiciones, cantidades, precios de compra ni datos personales. Incluye H4ZF.DE, NVDA, GOOGL, MSFT y NESR.DE como instrumentos activos. Para comprobar sus cotizaciones reales sin ejecutar reglas, crear alertas, usar notifiers ni leer o escribir `alert_state.json`:
 
 ```bash
-.venv/bin/openportfolio review \
+.venv/bin/openportfolio --check-quotes \
   --portfolio examples/operational_review.yaml \
-  --provider yfinance \
-  --notifier console \
-  --dry-run
+  --provider yfinance
 ```
+
+La comprobación muestra para cada instrumento el nombre, símbolo solicitado, precio, moneda recibida, timestamp y resultado. Una moneda distinta de `expected_currency` o cualquier fallo de consulta marca el símbolo como fallido; aun así se consultan los demás y el proceso termina con código distinto de cero al final.
 
 El adaptador usa el último cierre diario utilizable de los últimos cinco días. yfinance es un servicio externo no contractual: requiere red, puede sufrir límites o cambios de API, tener retrasos, devolver moneda o timestamps incompletos y no garantiza disponibilidad ni calidad para todos los símbolos. OpenPortfolio trata esas situaciones como errores explícitos del instrumento; no sustituye precios ausentes por cero. No hay reintentos complejos en este incremento.
 
@@ -83,10 +83,11 @@ export OPENPORTFOLIO_NTFY_TOPIC='<topic-secreto-configurado-localmente>'
 
 Abre **Actions → Portfolio review → Run workflow** y selecciona:
 
+- `operation`: `review` mantiene el flujo existente; `check-real-quotes` ejecuta la comprobación real de los cinco símbolos con yfinance.
 - `provider`: `fake` es la opción segura predeterminada; `yfinance` usa `examples/operational_review.yaml` y consulta datos reales.
 - `dry_run`: está activado por defecto. Para `yfinance` es obligatorio y el workflow rechaza explícitamente cualquier otra combinación.
 
-El workflow ejecuta los tests, restaura el estado y muestra el resultado por consola. No construye ni contacta ntfy, no usa secretos y no tiene `schedule`. Una ejecución dry-run no guarda ni modifica `state/alert_state.json`; el paso de guardado solo puede ejecutarse tras una revisión fake no-dry-run completada. La ejecución yfinance actual consulta únicamente NVDA y MSFT hasta que se confirmen los otros tres símbolos y no aplica reglas hasta completar los valores pendientes.
+El workflow ejecuta los tests y muestra el resultado por consola. Con `operation: check-real-quotes`, fuerza yfinance y `--check-quotes`, omite por completo los pasos de restauración y guardado de estado, no construye ni contacta ntfy, no permite notificaciones y no requiere secretos. No hay ningún `schedule`. Las opciones `provider` y `dry_run` continúan aplicándose sin cambios a `operation: review`; una revisión dry-run no guarda ni modifica `state/alert_state.json`.
 
 GitHub Actions cache es la solución inicial de persistencia de la v1, no almacenamiento permanente garantizado: GitHub puede desalojar cachés, aplica límites de retención y una caché ausente hace que la siguiente ejecución se comporte como una primera ejecución. Por ello reduce duplicados entre runners, pero no ofrece las garantías de una base de datos.
 

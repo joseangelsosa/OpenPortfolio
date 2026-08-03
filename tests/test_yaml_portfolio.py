@@ -90,7 +90,10 @@ def test_operational_review_has_no_positions_or_enabled_investment_rules() -> No
         "nestle",
     }
     assert portfolio.instrument("nvidia").symbol_for("yfinance") == "NVDA"
+    assert portfolio.instrument("sp500-etf").symbol_for("yfinance") == "H4ZF.DE"
+    assert portfolio.instrument("alphabet").symbol_for("yfinance") == "GOOGL"
     assert portfolio.instrument("microsoft").symbol_for("yfinance") == "MSFT"
-    assert not portfolio.instrument("sp500-etf").active
-    assert not portfolio.instrument("alphabet").active
-    assert not portfolio.instrument("nestle").active
+    assert portfolio.instrument("nestle").symbol_for("yfinance") == "NESR.DE"
+    assert all(instrument.active for instrument in portfolio.instruments)
+    assert portfolio.instrument("sp500-etf").currency == "EUR"
+    assert portfolio.instrument("nestle").currency == "EUR"

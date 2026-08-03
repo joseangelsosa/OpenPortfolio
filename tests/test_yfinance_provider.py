@@ -99,6 +99,6 @@ def test_external_client_exception_is_sanitized_and_identifies_symbol() -> None:
     assert "sensitive external detail" not in str(captured.value)
 
 
-def test_currency_mismatch_is_explicit() -> None:
-    with pytest.raises(ProviderResponseError, match="EUR.*TEST.*USD"):
-        provider(TickerStub(history(), "EUR")).get_quote(instrument("USD"))
+def test_reported_currency_is_preserved_for_application_validation() -> None:
+    quote = provider(TickerStub(history(), "EUR")).get_quote(instrument("USD"))
+    assert quote.currency == "EUR"

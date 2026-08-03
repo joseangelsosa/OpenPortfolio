@@ -1,5 +1,4 @@
 # Lista operativa sin posiciones, cantidades, precios de compra ni datos personales.
-# Los instrumentos sin símbolo documentado permanecen inactivos para no adivinarlo.
 portfolio:
   id: operational-review
   name: Primera revisión operativa
@@ -7,37 +6,42 @@ portfolio:
 
 instruments:
   - id: sp500-etf
-    name: S&P 500 ETF
+    name: HSBC S&P 500 UCITS ETF
     asset_type: ETF
-    currency: USD
-    provider_symbols: {}
-    active: false # TODO: confirmar símbolo exacto y moneda de su mercado.
+    expected_currency: EUR
+    provider_symbols:
+      yfinance: H4ZF.DE
+    active: true
+    # ISIN de referencia documental: IE00B5KQNG97
   - id: nvidia
     name: NVIDIA
     asset_type: STOCK
-    currency: USD
+    expected_currency: USD
     provider_symbols:
       yfinance: NVDA
     active: true
   - id: alphabet
-    name: Alphabet
+    name: Alphabet Class A
     asset_type: STOCK
-    currency: USD
-    provider_symbols: {}
-    active: false # TODO: confirmar clase y símbolo exactos.
+    expected_currency: USD
+    provider_symbols:
+      yfinance: GOOGL
+    active: true
   - id: microsoft
     name: Microsoft
     asset_type: STOCK
-    currency: USD
+    expected_currency: USD
     provider_symbols:
       yfinance: MSFT
     active: true
   - id: nestle
     name: Nestlé
     asset_type: STOCK
-    currency: CHF
-    provider_symbols: {}
-    active: false # TODO: confirmar símbolo europeo y moneda de cotización.
+    expected_currency: EUR
+    provider_symbols:
+      yfinance: NESR.DE
+    active: true
+    # ISIN de referencia documental: CH0038863350
 
 positions: []
 

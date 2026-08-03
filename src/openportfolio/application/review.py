@@ -52,6 +52,11 @@ def run_portfolio_review(
         except MarketDataError as error:
             quote_errors[instrument.id] = str(error)
             continue
+        if quote.currency != instrument.currency:
+            quote_errors[instrument.id] = (
+                f"moneda recibida {quote.currency}; se esperaba {instrument.currency}"
+            )
+            continue
         quotes[instrument.id] = quote
         thresholds = configuration.price_reference_rules.get(instrument.id)
         if thresholds is None:

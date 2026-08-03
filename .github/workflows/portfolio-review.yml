@@ -3,6 +3,14 @@ name: Portfolio review
 on:
   workflow_dispatch:
     inputs:
+      operation:
+        description: Operation to run
+        required: true
+        type: choice
+        default: review
+        options:
+          - review
+          - check-real-quotes
       provider:
         description: Market-data provider
         required: true
@@ -45,6 +53,7 @@ jobs:
         run: python -m pytest
 
       - name: Restore alert delivery state
+        if: inputs.operation == 'review'
         uses: actions/cache/restore@v4
         with:
           path: state/alert_state.json
@@ -53,13 +62,14 @@ jobs:
             alert-state-${{ runner.os }}-
 
       - name: Validate operational safety
-        if: inputs.provider == 'yfinance' && !inputs.dry_run
+        if: inputs.operation == 'review' && inputs.provider == 'yfinance' && !inputs.dry_run
         run: |
           echo 'yfinance is restricted to dry-run in this increment.' >&2
           exit 2
 
       - name: Run portfolio review
         id: operational-review
+        if: inputs.operation == 'review'
         shell: bash
         run: |
           portfolio='examples/demo_portfolio.yaml'
@@ -72,8 +82,16 @@ jobs:
           fi
           openportfolio "${arguments[@]}"
 
+      - name: Check real quotes with yfinance
+        if: inputs.operation == 'check-real-quotes'
+        run: >-
+          openportfolio
+          --check-quotes
+          --portfolio examples/operational_review.yaml
+          --provider yfinance
+
       - name: Save updated alert delivery state
-        if: always() && steps.operational-review.outcome == 'success' && !inputs.dry_run && hashFiles('state/alert_state.json') != ''
+        if: always() && inputs.operation == 'review' && steps.operational-review.outcome == 'success' && !inputs.dry_run && hashFiles('state/alert_state.json') != ''
         uses: actions/cache/save@v4
         with:
           path: state/alert_state.json

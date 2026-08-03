@@ -70,11 +70,6 @@ class YFinanceMarketDataProvider:
             raise ProviderResponseError(
                 f"respuesta no utilizable de yfinance para {symbol!r}"
             ) from error
-        if reported_currency != instrument.currency:
-            raise ProviderResponseError(
-                f"yfinance informó {reported_currency} para {symbol!r}, "
-                f"pero el instrumento declara {instrument.currency}"
-            )
         try:
             return MarketQuote(
                 id=f"yfinance:{instrument.id}:{observed_at.isoformat()}",

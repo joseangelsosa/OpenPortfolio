@@ -7,7 +7,11 @@ import sys
 from typing import Mapping, Sequence
 
 from openportfolio.alerts import ConsoleNotifier, NotificationConfigurationError, NtfyNotifier
-from openportfolio.application import run_portfolio_review
+from openportfolio.application import (
+    QuoteCheckItem,
+    check_portfolio_quotes,
+    run_portfolio_review,
+)
 from openportfolio.domain import MarketQuote, Portfolio
 from openportfolio.market_data import MarketDataError, MarketDataProvider
 from openportfolio.persistence import (
@@ -47,6 +51,11 @@ def _valuation_main(argv: Sequence[str]) -> int:
         default="fake",
         help="proveedor de cotizaciones; fake no usa red",
     )
+    parser.add_argument(
+        "--check-quotes",
+        action="store_true",
+        help="comprueba cotizaciones sin reglas, alertas, estado ni notificaciones",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -55,15 +64,27 @@ def _valuation_main(argv: Sequence[str]) -> int:
     except (PortfolioConfigurationError, ImportError) as error:
         parser.error(str(error))
 
+    if args.check_quotes:
+        result = check_portfolio_quotes(configuration.portfolio, provider)
+        _print_quote_check(result.items)
+        return 0 if result.ok else 1
+
     quotes: dict[str, MarketQuote] = {}
     errors: dict[str, str] = {}
     for instrument in configuration.portfolio.instruments:
         if not instrument.active:
             continue
         try:
-            quotes[instrument.id] = provider.get_quote(instrument)
+            quote = provider.get_quote(instrument)
         except MarketDataError as error:
             errors[instrument.id] = str(error)
+            continue
+        if quote.currency != instrument.currency:
+            errors[instrument.id] = (
+                f"moneda recibida {quote.currency}; se esperaba {instrument.currency}"
+            )
+            continue
+        quotes[instrument.id] = quote
 
     _print_report(configuration.portfolio, quotes, errors)
     return 1 if errors else 0
@@ -210,6 +231,36 @@ def _print_report(
 
 def _number(value: Decimal) -> str:
     return f"{value:,.2f}"
+
+
+def _print_quote_check(items: Sequence[QuoteCheckItem]) -> None:
+    print("OpenPortfolio — comprobación de cotizaciones")
+    print("Sin reglas, alertas, estado ni notificaciones.")
+    print()
+    failed_symbols: list[str] = []
+    for item in items:
+        instrument = item.instrument
+        symbol = item.requested_symbol or "—"
+        quote = item.quote
+        error = item.error
+        if quote is None:
+            price = currency = timestamp = "—"
+        else:
+            price = _number(quote.price)
+            currency = quote.currency
+            timestamp = quote.observed_at.isoformat()
+        result = "OK" if error is None else f"ERROR — {error}"
+        print(
+            f"{instrument.name} | símbolo: {symbol} | precio: {price} | "
+            f"moneda: {currency} | timestamp: {timestamp} | resultado: {result}"
+        )
+        if error is not None:
+            failed_symbols.append(symbol if symbol != "—" else instrument.id)
+    print()
+    if failed_symbols:
+        print(f"Comprobación fallida. Símbolos fallidos: {', '.join(failed_symbols)}")
+    else:
+        print(f"Comprobación correcta: {len(items)} cotizaciones validadas.")
 
 
 if __name__ == "__main__":
