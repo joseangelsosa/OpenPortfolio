@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
-from openportfolio.domain import Alert, Severity
+from openportfolio.domain import Alert, OperationalNotification, Severity
 
 
 DEFAULT_NTFY_SERVER = "https://ntfy.sh"
@@ -26,8 +26,8 @@ class NotificationDeliveryError(NotificationError):
 
 
 class Notifier(Protocol):
-    def send(self, alert: Alert) -> None:
-        """Deliver one alert or raise a sanitized notification error."""
+    def send(self, notification: Alert | OperationalNotification) -> None:
+        """Deliver one notification or raise a sanitized notification error."""
         ...
 
 
@@ -35,8 +35,8 @@ class ConsoleNotifier:
     def __init__(self, output: Callable[[str], None] = print) -> None:
         self._output = output
 
-    def send(self, alert: Alert) -> None:
-        self._output(f"{alert.title}\n{alert.body}")
+    def send(self, notification: Alert | OperationalNotification) -> None:
+        self._output(f"{notification.title}\n{notification.body}")
 
 
 class NtfyNotifier:
@@ -71,14 +71,14 @@ class NtfyNotifier:
                 "falta OPENPORTFOLIO_NTFY_TOPIC para realizar un envío ntfy"
             )
 
-    def send(self, alert: Alert) -> None:
+    def send(self, notification: Alert | OperationalNotification) -> None:
         request = Request(
             f"{self._server}/{quote(self._topic, safe='')}",
-            data=alert.body.encode("utf-8"),
+            data=notification.body.encode("utf-8"),
             method="POST",
             headers={
-                "Title": alert.title,
-                "Priority": self._priority(alert.severity),
+                "Title": notification.title,
+                "Priority": self._priority(notification),
                 "Content-Type": "text/plain; charset=utf-8",
             },
         )
@@ -103,5 +103,9 @@ class NtfyNotifier:
             raise NotificationDeliveryError("falló el envío al servidor ntfy") from None
 
     @staticmethod
-    def _priority(severity: Severity) -> str:
-        return "5" if severity is Severity.HIGH else "3"
+    def _priority(notification: Alert | OperationalNotification) -> str:
+        return (
+            "5"
+            if isinstance(notification, Alert) and notification.severity is Severity.HIGH
+            else "3"
+        )

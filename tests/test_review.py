@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -6,16 +7,74 @@ import pytest
 from openportfolio.alerts import ConsoleNotifier, NotificationDeliveryError
 from openportfolio.application import run_portfolio_review
 from openportfolio.cli import main
-from openportfolio.persistence import JsonAlertStateStore, load_portfolio
+from openportfolio.domain import Alert, MarketQuote, OperationalNotification, QuoteSource
+from openportfolio.market_data import ProviderResponseError
+from openportfolio.persistence import (
+    AlertState,
+    AlertStateError,
+    JsonAlertStateStore,
+    load_portfolio,
+)
 from openportfolio.providers import FakeMarketDataProvider
 
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "demo_portfolio.yaml"
+OPERATIONAL_EXAMPLE = Path(__file__).parents[1] / "examples" / "operational_review.yaml"
 
 
 class FailingNotifier:
     def send(self, alert: object) -> None:
         raise NotificationDeliveryError("fallo ficticio")
+
+
+class CapturingNotifier:
+    def __init__(self) -> None:
+        self.sent: list[Alert | OperationalNotification] = []
+
+    def send(self, notification: Alert | OperationalNotification) -> None:
+        self.sent.append(notification)
+
+
+class OperationalFakeProvider:
+    name = "operational-fake"
+
+    def __init__(
+        self,
+        prices: dict[str, Decimal],
+        *,
+        failing_instrument: str | None = None,
+    ) -> None:
+        self.prices = prices
+        self.failing_instrument = failing_instrument
+
+    def get_quote(self, instrument: object) -> MarketQuote:
+        instrument_id = instrument.id  # type: ignore[attr-defined]
+        if instrument_id == self.failing_instrument:
+            raise ProviderResponseError("fallo ficticio de cotización")
+        observed_at = datetime(2026, 1, 2, 16, 0, tzinfo=timezone.utc)
+        return MarketQuote(
+            id=f"quote-{instrument_id}",
+            instrument_id=instrument_id,
+            price=self.prices[instrument_id],
+            currency=instrument.currency,  # type: ignore[attr-defined]
+            observed_at=observed_at,
+            retrieved_at=observed_at,
+            provider=self.name,
+            provider_symbol=instrument_id,
+            source=QuoteSource.INTRADAY,
+        )
+
+
+def _operational_prices(**overrides: str) -> dict[str, Decimal]:
+    prices = {
+        "sp500-etf": Decimal("66.42"),
+        "nvidia": Decimal("204.38"),
+        "alphabet": Decimal("368.28"),
+        "microsoft": Decimal("486.36"),
+        "nestle": Decimal("87.09"),
+    }
+    prices.update({key: Decimal(value) for key, value in overrides.items()})
+    return prices
 
 
 def test_review_demo_produces_one_deterministic_review_alert() -> None:
@@ -232,3 +291,182 @@ fake_market_data: {FAKE-ASSET: '115'}
     assert len(result.quotes) == 1
     assert len(result.alerts) == 1
     assert result.alerts[0].severity.value == "REVIEW"
+
+
+def test_operational_review_without_alerts_sends_one_outcome_notification() -> None:
+    configuration = load_portfolio(OPERATIONAL_EXAMPLE)
+    notifier = CapturingNotifier()
+
+    result = run_portfolio_review(
+        configuration,
+        OperationalFakeProvider(_operational_prices()),
+        notifier,
+        send_operational_notification=True,
+    )
+
+    assert result.operational_notification_sent
+    assert not result.alerts
+    assert len(notifier.sent) == 1
+    notification = notifier.sent[0]
+    assert isinstance(notification, OperationalNotification)
+    assert "5 instrumentos" in notification.body
+    assert "no se han detectado cambios relevantes" in notification.body
+
+
+@pytest.mark.parametrize("new_alerts", [1, 2])
+def test_new_alerts_do_not_add_generic_operational_notification(new_alerts: int) -> None:
+    configuration = load_portfolio(OPERATIONAL_EXAMPLE)
+    prices = _operational_prices(nvidia="216")
+    if new_alerts == 2:
+        prices["alphabet"] = Decimal("390")
+    notifier = CapturingNotifier()
+
+    result = run_portfolio_review(
+        configuration,
+        OperationalFakeProvider(prices),
+        notifier,
+        send_operational_notification=True,
+    )
+
+    assert len(result.delivered_alerts) == new_alerts
+    assert not result.operational_notification_sent
+    assert len(notifier.sent) == new_alerts
+    assert all(isinstance(notification, Alert) for notification in notifier.sent)
+
+
+def test_only_deduplicated_alert_sends_one_accurate_summary(tmp_path: Path) -> None:
+    configuration = load_portfolio(OPERATIONAL_EXAMPLE)
+    prices = _operational_prices(nvidia="216")
+    store = JsonAlertStateStore(tmp_path / "alert_state.json")
+    run_portfolio_review(
+        configuration,
+        OperationalFakeProvider(prices),
+        CapturingNotifier(),
+        state_store=store,
+    )
+    notifier = CapturingNotifier()
+
+    result = run_portfolio_review(
+        configuration,
+        OperationalFakeProvider(prices),
+        notifier,
+        state_store=store,
+        send_operational_notification=True,
+    )
+
+    assert len(result.suppressed_alerts) == 1
+    assert result.operational_notification_sent
+    assert len(notifier.sent) == 1
+    notification = notifier.sent[0]
+    assert isinstance(notification, OperationalNotification)
+    assert "Sin alertas nuevas" in notification.body
+    assert "1 movimiento relevante ya había sido notificado" in notification.body
+    assert "no se han detectado cambios relevantes" not in notification.body
+
+
+def test_new_and_deduplicated_alert_sends_only_new_alert(tmp_path: Path) -> None:
+    configuration = load_portfolio(OPERATIONAL_EXAMPLE)
+    store = JsonAlertStateStore(tmp_path / "alert_state.json")
+    run_portfolio_review(
+        configuration,
+        OperationalFakeProvider(_operational_prices(nvidia="216")),
+        CapturingNotifier(),
+        state_store=store,
+    )
+    notifier = CapturingNotifier()
+
+    result = run_portfolio_review(
+        configuration,
+        OperationalFakeProvider(_operational_prices(nvidia="216", alphabet="390")),
+        notifier,
+        state_store=store,
+        send_operational_notification=True,
+    )
+
+    assert len(result.delivered_alerts) == 1
+    assert len(result.suppressed_alerts) == 1
+    assert not result.operational_notification_sent
+    assert len(notifier.sent) == 1
+    assert isinstance(notifier.sent[0], Alert)
+
+
+def test_operational_notification_does_not_change_alert_state(tmp_path: Path) -> None:
+    configuration = load_portfolio(OPERATIONAL_EXAMPLE)
+    store = JsonAlertStateStore(tmp_path / "alert_state.json")
+    notifier = CapturingNotifier()
+
+    first = run_portfolio_review(
+        configuration,
+        OperationalFakeProvider(_operational_prices()),
+        notifier,
+        state_store=store,
+        send_operational_notification=True,
+    )
+    state_after_first = store.load()
+    second = run_portfolio_review(
+        configuration,
+        OperationalFakeProvider(_operational_prices()),
+        notifier,
+        state_store=store,
+        send_operational_notification=True,
+    )
+
+    assert first.operational_notification_sent
+    assert second.operational_notification_sent
+    assert store.load() == state_after_first
+    assert not state_after_first.delivered_alerts
+
+
+def test_partial_review_does_not_send_success_notification() -> None:
+    configuration = load_portfolio(OPERATIONAL_EXAMPLE)
+    notifier = CapturingNotifier()
+
+    result = run_portfolio_review(
+        configuration,
+        OperationalFakeProvider(
+            _operational_prices(), failing_instrument="nvidia"
+        ),
+        notifier,
+        send_operational_notification=True,
+    )
+
+    assert result.is_partial
+    assert not result.operational_notification_sent
+    assert not notifier.sent
+
+
+def test_operational_notification_failure_is_visible() -> None:
+    configuration = load_portfolio(OPERATIONAL_EXAMPLE)
+
+    result = run_portfolio_review(
+        configuration,
+        OperationalFakeProvider(_operational_prices()),
+        FailingNotifier(),
+        send_operational_notification=True,
+    )
+
+    assert not result.operational_notification_sent
+    assert result.notification_errors == ("fallo ficticio",)
+
+
+def test_state_persistence_failure_prevents_success_notification() -> None:
+    configuration = load_portfolio(OPERATIONAL_EXAMPLE)
+    notifier = CapturingNotifier()
+
+    class FailingStateStore:
+        def load(self) -> AlertState:
+            return AlertState.empty()
+
+        def save(self, state: AlertState) -> None:
+            raise AlertStateError("fallo ficticio de persistencia")
+
+    with pytest.raises(AlertStateError, match="persistencia"):
+        run_portfolio_review(
+            configuration,
+            OperationalFakeProvider(_operational_prices()),
+            notifier,
+            state_store=FailingStateStore(),
+            send_operational_notification=True,
+        )
+
+    assert not notifier.sent

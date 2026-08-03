@@ -1,6 +1,9 @@
 name: Portfolio review
 
 on:
+  schedule:
+    - cron: "5 8,12,16,20 * * 1-5"
+      timezone: "Europe/Madrid"
   workflow_dispatch:
     inputs:
       operation:
@@ -28,10 +31,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           cache: pip
@@ -43,8 +46,8 @@ jobs:
         run: python -m pytest
 
       - name: Restore alert delivery state
-        if: inputs.operation == 'fake' || inputs.operation == 'review-and-notify'
-        uses: actions/cache/restore@v4
+        if: github.event_name == 'schedule' || inputs.operation == 'fake' || inputs.operation == 'review-and-notify'
+        uses: actions/cache/restore@v5
         with:
           path: state/alert_state.json
           key: alert-state-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -76,7 +79,7 @@ jobs:
 
       - name: Run real review and notify
         id: review_and_notify
-        if: inputs.operation == 'review-and-notify'
+        if: github.event_name == 'schedule' || inputs.operation == 'review-and-notify'
         env:
           OPENPORTFOLIO_NTFY_TOPIC: ${{ secrets.OPENPORTFOLIO_NTFY_TOPIC }}
         run: >-
@@ -84,10 +87,11 @@ jobs:
           --portfolio examples/operational_review.yaml
           --provider yfinance
           --notifier ntfy
+          --operational-notification
 
       - name: Save updated alert delivery state
-        if: always() && (inputs.operation == 'fake' || inputs.operation == 'review-and-notify') && hashFiles('state/alert_state.json') != ''
-        uses: actions/cache/save@v4
+        if: always() && (github.event_name == 'schedule' || inputs.operation == 'fake' || inputs.operation == 'review-and-notify') && hashFiles('state/alert_state.json') != ''
+        uses: actions/cache/save@v5
         with:
           path: state/alert_state.json
           key: alert-state-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}

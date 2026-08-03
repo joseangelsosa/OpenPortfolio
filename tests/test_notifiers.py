@@ -13,7 +13,7 @@ from openportfolio.alerts import (
     NtfyNotifier,
     alert_from_event,
 )
-from openportfolio.domain import AnalysisEvent, Alert, Severity
+from openportfolio.domain import AnalysisEvent, Alert, OperationalNotification, Severity
 
 
 SECRET_TOPIC = "test-topic-placeholder-7f8e9d"
@@ -89,6 +89,22 @@ def test_high_maps_to_max_priority() -> None:
 
     NtfyNotifier(topic=SECRET_TOPIC, http_open=http_open).send(alert(Severity.HIGH))
     assert requests[0].headers["Priority"] == "5"  # type: ignore[attr-defined]
+
+
+def test_operational_notification_uses_normal_priority() -> None:
+    requests: list[object] = []
+
+    def http_open(request: object, *, timeout: float) -> Response:
+        requests.append(request)
+        return Response()
+
+    notification = OperationalNotification(
+        title="OpenPortfolio · RESULTADO OPERATIVO",
+        body="Revisión completada.",
+    )
+    NtfyNotifier(topic=SECRET_TOPIC, http_open=http_open).send(notification)
+
+    assert requests[0].headers["Priority"] == "3"  # type: ignore[attr-defined]
 
 
 def test_ntfy_rejects_missing_topic_without_network(monkeypatch: pytest.MonkeyPatch) -> None:

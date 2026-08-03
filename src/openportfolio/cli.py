@@ -136,7 +136,22 @@ def _review_main(argv: Sequence[str]) -> int:
         default=DEFAULT_ALERT_STATE_PATH,
         help="estado JSON de entregas (por defecto: state/alert_state.json)",
     )
+    parser.add_argument(
+        "--operational-notification",
+        action="store_true",
+        help="envía confirmación ntfy del resultado cuando no hay alertas nuevas",
+    )
     args = parser.parse_args(argv)
+
+    if args.operational_notification and (
+        args.provider != "yfinance" or args.notifier != "ntfy" or args.dry_run
+    ):
+        print(
+            "Error de configuración: la notificación operativa solo corresponde a "
+            "revisiones reales con yfinance y ntfy.",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         configuration = load_portfolio(args.portfolio)
@@ -160,6 +175,7 @@ def _review_main(argv: Sequence[str]) -> int:
             notifier,
             state_store=JsonAlertStateStore(args.state_path),
             dry_run=args.dry_run,
+            send_operational_notification=args.operational_notification,
         )
     except AlertStateError as error:
         print(f"Error de estado de alertas: {error}", file=sys.stderr)
@@ -170,7 +186,8 @@ def _review_main(argv: Sequence[str]) -> int:
         f"Revisión completada: {len(result.quotes)} cotizaciones, "
         f"{len(result.events)} eventos, {len(result.alerts)} alertas generadas, "
         f"{result.notifications_sent} enviadas, "
-        f"{len(result.suppressed_alerts)} suprimidas por duplicadas."
+        f"{len(result.suppressed_alerts)} suprimidas por duplicadas, "
+        f"{int(result.operational_notification_sent)} notificación operativa enviada."
     )
     for instrument_id, error in result.quote_errors.items():
         print(f"Cotización ausente para {instrument_id}: {error}", file=sys.stderr)

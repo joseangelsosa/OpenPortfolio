@@ -231,6 +231,22 @@ class Alert:
 
 
 @dataclass(frozen=True, slots=True)
+class OperationalNotification:
+    """Operational review outcome; deliberately not a market alert."""
+
+    title: str
+    body: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "title",
+            _required_text(self.title, "notification.title"),
+        )
+        object.__setattr__(self, "body", _required_text(self.body, "notification.body"))
+
+
+@dataclass(frozen=True, slots=True)
 class Instrument:
     id: str
     name: str

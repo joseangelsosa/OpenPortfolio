@@ -58,7 +58,9 @@ La revisión conserva por defecto el estado de entregas en `state/alert_state.js
 
 Después de que cualquier `Notifier` confirme una entrega, el estado se reemplaza de forma atómica. Una ejecución posterior suprime la misma condición por instrumento y dirección; un escalado de `REVIEW` a `HIGH` vuelve a notificarse. Al regresar por debajo del 5 % la condición se rearma para permitir una alerta en un cruce futuro. Los fallos de entrega y las ejecuciones `--dry-run` no registran una entrega.
 
-Si el archivo todavía no existe, la ejecución se considera la primera y se crea el directorio al registrar la primera entrega. Si está corrupto o usa una versión desconocida, la aplicación termina con un error explícito y conserva el archivo anterior. El estado local es generado y está excluido de Git.
+Cada revisión operativa real completada correctamente produce al menos una push. Si hay alertas nuevas se envían las alertas de mercado `REVIEW`/`HIGH`, sin añadir un mensaje genérico. Si no hay movimientos relevantes se envía una confirmación operativa que indica que se revisaron los cinco instrumentos. Si todos los movimientos quedan suprimidos por deduplicación, la confirmación indica que no hay alertas nuevas y cuántos movimientos ya habían sido notificados; no afirma que no existan movimientos relevantes. Esta confirmación es un mensaje operativo independiente, no una alerta de mercado: no tiene severidad `REVIEW`/`HIGH` y nunca se guarda en `alert_state.json`. Un fallo de cotización, revisión, estado o notificación termina con error y no genera una confirmación falsa de éxito.
+
+Si el archivo todavía no existe, la ejecución se considera la primera y el servicio crea el directorio al persistir el resultado de la revisión. Si está corrupto o usa una versión desconocida, la aplicación termina con un error explícito y conserva el archivo anterior. El estado local es generado y está excluido de Git.
 
 Para construir y ver exactamente el contenido de una notificación ntfy sin realizar ninguna llamada HTTP ni exigir un topic:
 
@@ -81,7 +83,9 @@ export OPENPORTFOLIO_NTFY_TOPIC='<topic-secreto-configurado-localmente>'
 
 `OPENPORTFOLIO_NTFY_SERVER` es opcional y usa `https://ntfy.sh` por defecto. `OPENPORTFOLIO_NTFY_TOPIC` es obligatorio para un envío real. Esta versión no implementa autenticación de usuario de ntfy ni despliega un servidor propio.
 
-### Ejecución manual en GitHub Actions
+### Revisiones programadas y ejecución manual en GitHub Actions
+
+El workflow ejecuta automáticamente `review-and-notify` de lunes a viernes a las 08:05, 12:05, 16:05 y 20:05 en la zona IANA `Europe/Madrid`. GitHub adapta esos horarios al verano y al invierno sin conversiones UTC manuales. Los workflows programados siempre usan la rama predeterminada y GitHub Actions puede retrasar el inicio en periodos de carga elevada.
 
 Abre **Actions → Portfolio review → Run workflow** y selecciona una operación:
 
@@ -89,9 +93,11 @@ Abre **Actions → Portfolio review → Run workflow** y selecciona una operaci�
 - `dry-run`: previsualización ficticia sin notificación ni cambios de estado.
 - `check-real-quotes`: consulta yfinance, pero queda aislada de reglas, estado, notifier y secretos.
 - `send-test-notification`: envía exactamente el mensaje marcado como `PRUEBA`, sin yfinance, cartera operativa ni estado real.
-- `review-and-notify`: consulta yfinance, ejecuta las cinco reglas operativas, restaura y guarda `alert_state.json` y envía las alertas aplicables por ntfy.
+- `review-and-notify`: ejecuta manualmente el mismo camino que el schedule: consulta yfinance, ejecuta las cinco reglas operativas, restaura y guarda `alert_state.json` y envía por ntfy las alertas o la confirmación operativa aplicable.
 
-Los dos envíos ntfy requieren crear el GitHub Actions secret `OPENPORTFOLIO_NTFY_TOPIC`; el workflow no imprime su valor y falla de forma explícita si falta. `review-and-notify` es exclusivamente manual. `check-real-quotes` no construye ni contacta ntfy y no requiere secretos. Todavía no existe ningún `schedule`.
+Los dos envíos ntfy requieren crear el GitHub Actions secret `OPENPORTFOLIO_NTFY_TOPIC`; el workflow no imprime su valor y falla de forma explícita si falta. Las operaciones manuales `fake`, `dry-run`, `check-real-quotes`, `send-test-notification` y `review-and-notify` permanecen disponibles. `check-real-quotes` no construye ni contacta ntfy y no requiere secretos; `send-test-notification` conserva su único mensaje específico de prueba y ninguna de las dos operaciones usa el estado de alertas.
+
+Las revisiones reales comparten un grupo de concurrencia estable con `cancel-in-progress: false`: una revisión iniciada termina antes de que otra pueda restaurar y modificar el mismo estado. Tanto el schedule como `review-and-notify` restauran el estado antes de revisar y guardan después la versión actualizada.
 
 GitHub Actions cache es la solución inicial de persistencia de la v1, no almacenamiento permanente garantizado: GitHub puede desalojar cachés, aplica límites de retención y una caché ausente hace que la siguiente ejecución se comporte como una primera ejecución. Por ello reduce duplicados entre runners, pero no ofrece las garantías de una base de datos.
 

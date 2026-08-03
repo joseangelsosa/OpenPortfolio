@@ -6,7 +6,7 @@ from typing import Mapping
 
 from openportfolio.alerts import Notifier, alerts_from_events
 from openportfolio.analysis import PRICE_REFERENCE_CHANGE, PriceReferenceChangeRule
-from openportfolio.domain import Alert, AnalysisEvent, MarketQuote
+from openportfolio.domain import Alert, AnalysisEvent, MarketQuote, OperationalNotification
 from openportfolio.market_data import MarketDataError, MarketDataProvider
 from openportfolio.persistence import AlertState, AlertStateStore, PortfolioConfiguration
 
@@ -20,6 +20,7 @@ class ReviewResult:
     suppressed_alerts: tuple[Alert, ...]
     quote_errors: Mapping[str, str]
     notification_errors: tuple[str, ...]
+    operational_notification_sent: bool
 
     @property
     def is_partial(self) -> bool:
@@ -37,6 +38,7 @@ def run_portfolio_review(
     *,
     state_store: AlertStateStore | None = None,
     dry_run: bool = False,
+    send_operational_notification: bool = False,
 ) -> ReviewResult:
     state = state_store.load() if state_store is not None else AlertState.empty()
     quotes: dict[str, MarketQuote] = {}
@@ -103,6 +105,25 @@ def run_portfolio_review(
     if state_store is not None and not dry_run:
         state_store.save(state)
 
+    operational_notification_sent = False
+    if (
+        send_operational_notification
+        and not dry_run
+        and not quote_errors
+        and not delivered_alerts
+        and not notification_errors
+    ):
+        notification = _operational_notification(
+            instrument_count=len(quotes),
+            suppressed_count=len(suppressed_alerts),
+        )
+        try:
+            notifier.send(notification)
+        except RuntimeError as error:
+            notification_errors.append(str(error))
+        else:
+            operational_notification_sent = True
+
     return ReviewResult(
         quotes=MappingProxyType(quotes),
         events=tuple(events),
@@ -111,4 +132,33 @@ def run_portfolio_review(
         suppressed_alerts=tuple(suppressed_alerts),
         quote_errors=MappingProxyType(quote_errors),
         notification_errors=tuple(notification_errors),
+        operational_notification_sent=operational_notification_sent,
+    )
+
+
+def _operational_notification(
+    *, instrument_count: int, suppressed_count: int
+) -> OperationalNotification:
+    if suppressed_count:
+        noun = (
+            "movimiento relevante" if suppressed_count == 1 else "movimientos relevantes"
+        )
+        verb = (
+            "había sido notificado"
+            if suppressed_count == 1
+            else "habían sido notificados"
+        )
+        body = (
+            "OpenPortfolio — revisión completada. Sin alertas nuevas; "
+            f"{suppressed_count} {noun} ya {verb}."
+        )
+    else:
+        body = (
+            "OpenPortfolio — revisión completada. "
+            f"Se han revisado {instrument_count} instrumentos y no se han detectado "
+            "cambios relevantes."
+        )
+    return OperationalNotification(
+        title="OpenPortfolio · RESULTADO OPERATIVO",
+        body=body,
     )
