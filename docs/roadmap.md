@@ -26,7 +26,7 @@ Establecer una base mínima, mantenible y verificable para desarrollar la prueba
 
 - instalación reproducible en un entorno limpio con Python 3.13;
 - todas las comprobaciones configuradas pasan localmente;
-- tests unitarios demuestran que el dominio no importa yfinance, Streamlit ni Telegram;
+- tests unitarios demuestran que el dominio no importa yfinance, Streamlit ni ntfy;
 - una revisión confirma que no hay secretos ni datos personales versionados;
 - ejemplos YAML ficticios pasan la validación de esquema y las salidas JSON respetan sus contratos.
 
@@ -112,7 +112,13 @@ Calcular métricas reproducibles y detectar condiciones relevantes mediante regl
 - entrega por canales externos;
 - activos o divisas cuya valoración no esté definida de forma explícita.
 
-## Fase 3: notificaciones Telegram
+## Fase 3: notificaciones móviles mediante ntfy
+
+### Estado actual
+
+Se ha adelantado una vertical mínima para demostrar el recorrido completo con datos ficticios: cotización, regla configurable de variación, `AnalysisEvent`, `Alert`, consola y entrega HTTP reemplazable mediante ntfy. Existe un workflow exclusivamente manual que prueba primero la aplicación y luego puede hacer el envío con GitHub Actions Secrets.
+
+Este adelanto no completa la Fase 3. Todavía no hay programación automática, deduplicación persistente, agrupación, reapertura, recordatorios, reintentos ni estado duradero de entrega. La Fase 1 continúa pendiente de FX, consolidación EUR, `PortfolioSnapshot`, frescura completa y los demás elementos documentados en su estado actual.
 
 ### Objetivo
 
@@ -123,25 +129,25 @@ Entregar de forma segura alertas informativas derivadas de eventos deterministas
 - transformación de `AnalysisEvent` a `Alert`;
 - deduplicación, agrupación, reapertura y estados de entrega;
 - reenvío solo por aumento de severidad, cambio material configurable o vencimiento de recordatorio;
-- interfaz de canal y adaptador de Telegram;
+- interfaz de canal y adaptador de ntfy;
 - plantillas que incluyan evidencia, procedencia y frescura cuando corresponda;
 - configuración por variables de entorno y guía de secretos;
-- automatización programada a las 22:30 UTC de lunes a viernes y activación manual mediante `workflow_dispatch`;
+- automatización programada a las 22:30 UTC de lunes a viernes y activación manual mediante `workflow_dispatch` (solo la activación manual existe en la vertical adelantada);
 - hasta tres intentos con espera progresiva para fallos temporales, sin reintentar errores de configuración, validación o credenciales;
 - permisos `contents: read`, timeout y concurrencia limitada, secretos en GitHub Actions Secrets y artifacts temporales solo cuando sean necesarios.
 
 ### Validación
 
 - tests del formateo, agrupación, deduplicación y manejo de errores con un canal simulado;
-- tests prueban que Telegram solo recibe `REVIEW`, `HIGH` o un fallo técnico definitivo, y que no envía confirmaciones diarias sin eventos;
+- tests prueban que ntfy solo recibe `REVIEW`, `HIGH` o un fallo técnico definitivo, y que no envía confirmaciones diarias sin eventos;
 - tests prueban una única alerta técnica tras agotar reintentos y ningún reintento ante errores no temporales;
-- comprobación manual en un chat de prueba sin exponer token ni identificador;
+- comprobación manual en un topic de prueba sin exponerlo;
 - revisión de registros para asegurar que no revelan secretos;
 - ejecución controlada del workflow y verificación de permisos mínimos y fallo observable.
 
 ### Fuera de alcance
 
-- recepción de órdenes o comandos financieros por Telegram;
+- recepción de órdenes o comandos financieros mediante ntfy;
 - recomendaciones personalizadas y botones de trading;
 - garantía de entrega, alta disponibilidad o escalado multiusuario;
 - almacenamiento de secretos en archivos del repositorio;
@@ -247,4 +253,4 @@ Incorporar gradualmente una capa versionada de políticas, contexto y apoyo a de
 
 ## Decisiones de paso entre fases
 
-El avance a una fase requiere que los entregables y validaciones de la anterior estén completos, que no existan secretos o datos reales en el repositorio y que los límites de alcance continúen documentados. Telegram, GitHub Actions, Revolut, Streamlit e IOS requieren además una revisión humana antes de activar su primera integración externa.
+El avance a una fase requiere que los entregables y validaciones de la anterior estén completos, que no existan secretos o datos reales en el repositorio y que los límites de alcance continúen documentados. ntfy, GitHub Actions, Revolut, Streamlit e IOS requieren además una revisión humana antes de activar su primera integración externa.

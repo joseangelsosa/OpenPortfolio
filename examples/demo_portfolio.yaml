@@ -27,10 +27,16 @@ positions:
     instrument_id: demo-europe-etf
     quantity: "7.25"
     as_of: "2026-01-02T16:00:00+00:00"
+    reference_price: "40.00"
+    review_change_percent: "15.00"
+    high_change_percent: "25.00"
   - id: demo-position-usd
     instrument_id: demo-us-stock
     quantity: "3.50"
     as_of: "2026-01-02T16:00:00+00:00"
+    reference_price: "105.00"
+    review_change_percent: "15.00"
+    high_change_percent: "25.00"
 
 fake_market_data:
   FAKE-EUR-ETF: "42.40"

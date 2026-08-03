@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 from decimal import Decimal
 from pathlib import Path
+import sys
 from typing import Mapping, Sequence
 
+from openportfolio.alerts import ConsoleNotifier, NotificationConfigurationError, NtfyNotifier
+from openportfolio.application import run_portfolio_review
 from openportfolio.domain import MarketQuote, Portfolio
 from openportfolio.market_data import MarketDataError, MarketDataProvider
 from openportfolio.persistence import load_portfolio
@@ -16,7 +19,17 @@ DEFAULT_PORTFOLIO = Path(__file__).resolve().parents[2] / "examples" / "demo_por
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Valora una cartera ficticia por moneda original")
+    arguments = list(argv) if argv is not None else sys.argv[1:]
+    if arguments and arguments[0] == "review":
+        return _review_main(arguments[1:])
+    return _valuation_main(arguments)
+
+
+def _valuation_main(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        description="Valora una cartera ficticia por moneda original",
+        epilog="Para analizar umbrales y notificar: openportfolio review --help",
+    )
     parser.add_argument(
         "--portfolio",
         type=Path,
@@ -49,6 +62,66 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     _print_report(configuration.portfolio, quotes, errors)
     return 1 if errors else 0
+
+
+def _review_main(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="openportfolio review",
+        description="Ejecuta reglas deterministas y entrega alertas de revisión",
+    )
+    parser.add_argument(
+        "--portfolio",
+        type=Path,
+        default=DEFAULT_PORTFOLIO,
+        help="ruta al YAML de cartera (por defecto: examples/demo_portfolio.yaml)",
+    )
+    parser.add_argument(
+        "--provider",
+        choices=("fake", "yfinance"),
+        default="fake",
+        help="proveedor de cotizaciones; fake no usa red",
+    )
+    parser.add_argument(
+        "--notifier",
+        choices=("console", "ntfy"),
+        default="console",
+        help="canal de entrega; console es completamente offline",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="construye y muestra alertas sin contactar el canal seleccionado",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        configuration = load_portfolio(args.portfolio)
+        provider = _provider(args.provider, configuration.fake_prices)
+        if args.dry_run or args.notifier == "console":
+            notifier = ConsoleNotifier()
+        else:
+            notifier = NtfyNotifier()
+    except (PortfolioConfigurationError, ImportError, NotificationConfigurationError) as error:
+        print(f"Error de configuración: {error}", file=sys.stderr)
+        return 2
+
+    result = run_portfolio_review(configuration, provider, notifier)
+    if args.dry_run:
+        print("DRY RUN — no se envió ninguna notificación.")
+    print(
+        f"Revisión completada: {len(result.quotes)} cotizaciones, "
+        f"{len(result.events)} eventos, {len(result.alerts)} alertas."
+    )
+    for instrument_id, error in result.quote_errors.items():
+        print(f"Cotización ausente para {instrument_id}: {error}", file=sys.stderr)
+    for error in result.notification_errors:
+        print(f"Error de notificación: {error}", file=sys.stderr)
+
+    if result.notification_errors:
+        return 3
+    if result.is_partial:
+        return 1
+    return 0
 
 
 def _provider(name: str, fake_prices: Mapping[str, Decimal]) -> MarketDataProvider:

@@ -2,10 +2,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Mapping
 
 import yaml
 
+from openportfolio.analysis import PriceReferenceThresholds
 from openportfolio.domain import Instrument, Portfolio, Position
 
 
@@ -17,6 +19,7 @@ class PortfolioConfigurationError(ValueError):
 class PortfolioConfiguration:
     portfolio: Portfolio
     fake_prices: Mapping[str, Decimal]
+    price_reference_rules: Mapping[str, PriceReferenceThresholds]
 
 
 def load_portfolio(path: str | Path) -> PortfolioConfiguration:
@@ -36,9 +39,10 @@ def load_portfolio(path: str | Path) -> PortfolioConfiguration:
             _instrument(item, index)
             for index, item in enumerate(_list(root.get("instruments"), "instruments"))
         )
+        positions_data = _list(root.get("positions"), "positions")
         positions = tuple(
             _position(item, index, portfolio_id)
-            for index, item in enumerate(_list(root.get("positions"), "positions"))
+            for index, item in enumerate(positions_data)
         )
         portfolio = Portfolio(
             id=portfolio_id,
@@ -56,7 +60,18 @@ def load_portfolio(path: str | Path) -> PortfolioConfiguration:
         }
         if any(price <= 0 for price in fake_prices.values()):
             raise PortfolioConfigurationError("los precios ficticios deben ser mayores que cero")
-        return PortfolioConfiguration(portfolio=portfolio, fake_prices=fake_prices)
+        price_reference_rules: dict[str, PriceReferenceThresholds] = {}
+        for index, (position, raw_position) in enumerate(
+            zip(positions, positions_data, strict=True)
+        ):
+            thresholds = _price_reference_thresholds(raw_position, index)
+            if thresholds is not None:
+                price_reference_rules[position.id] = thresholds
+        return PortfolioConfiguration(
+            portfolio=portfolio,
+            fake_prices=MappingProxyType(fake_prices),
+            price_reference_rules=MappingProxyType(price_reference_rules),
+        )
     except (TypeError, ValueError) as error:
         if isinstance(error, PortfolioConfigurationError):
             raise
@@ -92,6 +107,31 @@ def _position(raw: Any, index: int, portfolio_id: str) -> Position:
         instrument_id=_text(data.get("instrument_id"), f"positions[{index}].instrument_id"),
         quantity=_decimal(data.get("quantity"), f"positions[{index}].quantity"),
         as_of=_timestamp(data.get("as_of"), f"positions[{index}].as_of"),
+    )
+
+
+def _price_reference_thresholds(
+    raw: Any, index: int
+) -> PriceReferenceThresholds | None:
+    data = _mapping(raw, f"positions[{index}]")
+    required = ("reference_price", "review_change_percent", "high_change_percent")
+    missing = [field for field in required if field not in data]
+    if len(missing) == len(required):
+        return None
+    if missing:
+        raise PortfolioConfigurationError(
+            f"positions[{index}] debe configurar juntos {', '.join(required)}"
+        )
+    return PriceReferenceThresholds(
+        reference_price=_decimal(
+            data["reference_price"], f"positions[{index}].reference_price"
+        ),
+        review_change_percent=_decimal(
+            data["review_change_percent"], f"positions[{index}].review_change_percent"
+        ),
+        high_change_percent=_decimal(
+            data["high_change_percent"], f"positions[{index}].high_change_percent"
+        ),
     )
 
 
@@ -136,4 +176,3 @@ def _timestamp(value: Any, field_name: str) -> datetime:
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         raise PortfolioConfigurationError(f"{field_name} debe incluir zona horaria")
     return timestamp
-

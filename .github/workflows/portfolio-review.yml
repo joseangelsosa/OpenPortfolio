@@ -1,0 +1,40 @@
+name: Portfolio review
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portfolio-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install project
+        run: python -m pip install -e '.[dev]'
+
+      - name: Run test suite
+        run: python -m pytest
+
+      - name: Run offline portfolio review
+        run: openportfolio review --provider fake --notifier console
+
+      - name: Send ntfy review alerts
+        env:
+          OPENPORTFOLIO_NTFY_SERVER: ${{ secrets.OPENPORTFOLIO_NTFY_SERVER }}
+          OPENPORTFOLIO_NTFY_TOPIC: ${{ secrets.OPENPORTFOLIO_NTFY_TOPIC }}
+        run: openportfolio review --provider fake --notifier ntfy

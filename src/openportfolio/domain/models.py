@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
+from hashlib import sha256
+import json
 from types import MappingProxyType
 from typing import Mapping
 
@@ -25,6 +28,163 @@ def _aware(timestamp: datetime, field_name: str) -> datetime:
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         raise ValueError(f"{field_name} debe incluir zona horaria")
     return timestamp
+
+
+class Severity(StrEnum):
+    INFO = "INFO"
+    REVIEW = "REVIEW"
+    HIGH = "HIGH"
+
+
+def _stable_identifier(prefix: str, payload: Mapping[str, str]) -> str:
+    canonical = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return f"{prefix}-{sha256(canonical.encode('utf-8')).hexdigest()[:24]}"
+
+
+def _canonical_decimal(value: Decimal) -> str:
+    return format(value.normalize(), "f")
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisEvent:
+    id: str
+    portfolio_id: str
+    rule_code: str
+    title: str
+    explanation: str
+    severity: Severity
+    instrument_id: str | None
+    instrument_name: str | None
+    currency: str | None
+    current_price: Decimal
+    reference_price: Decimal
+    change_percent: Decimal
+    threshold_percent: Decimal
+    occurred_at: datetime
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "id", _required_text(self.id, "analysis_event.id"))
+        object.__setattr__(
+            self,
+            "portfolio_id",
+            _required_text(self.portfolio_id, "analysis_event.portfolio_id"),
+        )
+        object.__setattr__(self, "rule_code", _required_text(self.rule_code, "analysis_event.rule_code"))
+        object.__setattr__(self, "title", _required_text(self.title, "analysis_event.title"))
+        object.__setattr__(
+            self,
+            "explanation",
+            _required_text(self.explanation, "analysis_event.explanation"),
+        )
+        if not isinstance(self.severity, Severity):
+            raise TypeError("analysis_event.severity debe ser Severity")
+        if self.instrument_id is not None:
+            object.__setattr__(
+                self,
+                "instrument_id",
+                _required_text(self.instrument_id, "analysis_event.instrument_id"),
+            )
+        if self.instrument_name is not None:
+            object.__setattr__(
+                self,
+                "instrument_name",
+                _required_text(self.instrument_name, "analysis_event.instrument_name"),
+            )
+        if self.currency is not None:
+            object.__setattr__(self, "currency", _currency(self.currency))
+        for field_name in (
+            "current_price",
+            "reference_price",
+            "change_percent",
+            "threshold_percent",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, Decimal):
+                raise TypeError(f"analysis_event.{field_name} debe ser Decimal")
+            if not value.is_finite():
+                raise ValueError(f"analysis_event.{field_name} debe ser finito")
+        if self.current_price <= 0 or self.reference_price <= 0 or self.threshold_percent <= 0:
+            raise ValueError("precios y umbral del evento deben ser mayores que cero")
+        _aware(self.occurred_at, "analysis_event.occurred_at")
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        portfolio_id: str,
+        rule_code: str,
+        title: str,
+        explanation: str,
+        severity: Severity,
+        instrument_id: str,
+        instrument_name: str,
+        currency: str,
+        current_price: Decimal,
+        reference_price: Decimal,
+        change_percent: Decimal,
+        threshold_percent: Decimal,
+        occurred_at: datetime,
+    ) -> AnalysisEvent:
+        identifier = _stable_identifier(
+            "event",
+            {
+                "portfolio_id": portfolio_id,
+                "rule_code": rule_code,
+                "severity": severity.value,
+                "instrument_id": instrument_id,
+                "current_price": _canonical_decimal(current_price),
+                "reference_price": _canonical_decimal(reference_price),
+                "change_percent": _canonical_decimal(change_percent),
+                "threshold_percent": _canonical_decimal(threshold_percent),
+                "occurred_at": occurred_at.isoformat(),
+            },
+        )
+        return cls(
+            id=identifier,
+            portfolio_id=portfolio_id,
+            rule_code=rule_code,
+            title=title,
+            explanation=explanation,
+            severity=severity,
+            instrument_id=instrument_id,
+            instrument_name=instrument_name,
+            currency=currency,
+            current_price=current_price,
+            reference_price=reference_price,
+            change_percent=change_percent,
+            threshold_percent=threshold_percent,
+            occurred_at=occurred_at,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Alert:
+    id: str
+    event_id: str
+    severity: Severity
+    title: str
+    body: str
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "id", _required_text(self.id, "alert.id"))
+        object.__setattr__(self, "event_id", _required_text(self.event_id, "alert.event_id"))
+        object.__setattr__(self, "title", _required_text(self.title, "alert.title"))
+        object.__setattr__(self, "body", _required_text(self.body, "alert.body"))
+        if not isinstance(self.severity, Severity):
+            raise TypeError("alert.severity debe ser Severity")
+        _aware(self.created_at, "alert.created_at")
+
+    @classmethod
+    def from_event(cls, event: AnalysisEvent, *, body: str) -> Alert:
+        return cls(
+            id=_stable_identifier("alert", {"event_id": event.id}),
+            event_id=event.id,
+            severity=event.severity,
+            title=f"OpenPortfolio · {event.severity.value}",
+            body=body,
+            created_at=event.occurred_at,
+        )
 
 
 @dataclass(frozen=True, slots=True)

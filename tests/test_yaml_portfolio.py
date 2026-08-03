@@ -47,3 +47,28 @@ fake_market_data: {FAKE: '10.00'}
     with pytest.raises(PortfolioConfigurationError, match="decimal escrito como texto"):
         load_portfolio(path)
 
+
+def test_yaml_without_analysis_thresholds_remains_valid_for_valuation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "portfolio.yaml"
+    path.write_text(
+        """
+portfolio: {id: demo, name: Demo, base_currency: EUR}
+instruments:
+  - id: asset
+    name: Asset
+    asset_type: ETF
+    currency: EUR
+    provider_symbols: {fake: FAKE}
+positions:
+  - id: position
+    instrument_id: asset
+    quantity: '1.25'
+    as_of: '2026-01-02T16:00:00+00:00'
+fake_market_data: {FAKE: '10.00'}
+""",
+        encoding="utf-8",
+    )
+    configuration = load_portfolio(path)
+    assert configuration.price_reference_rules == {}
