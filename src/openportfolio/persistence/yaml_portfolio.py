@@ -8,7 +8,7 @@ from typing import Any, Mapping
 import yaml
 
 from openportfolio.analysis import PriceReferenceThresholds
-from openportfolio.domain import Instrument, Portfolio, Position
+from openportfolio.domain import Instrument, Portfolio, Position, QuoteSource
 
 
 class PortfolioConfigurationError(ValueError):
@@ -19,6 +19,7 @@ class PortfolioConfigurationError(ValueError):
 class PortfolioConfiguration:
     portfolio: Portfolio
     fake_prices: Mapping[str, Decimal]
+    fake_quote_sources: Mapping[str, QuoteSource]
     price_reference_rules: Mapping[str, PriceReferenceThresholds]
 
 
@@ -60,6 +61,21 @@ def load_portfolio(path: str | Path) -> PortfolioConfiguration:
         }
         if any(price <= 0 for price in fake_prices.values()):
             raise PortfolioConfigurationError("los precios ficticios deben ser mayores que cero")
+        fake_sources_data = _mapping(
+            root.get("fake_market_data_sources", {}), "fake_market_data_sources"
+        )
+        fake_quote_sources = {
+            _text(symbol, "fake_market_data_sources símbolo"): _quote_source(
+                source, f"fake_market_data_sources.{symbol}"
+            )
+            for symbol, source in fake_sources_data.items()
+        }
+        unknown_fake_sources = set(fake_quote_sources) - set(fake_prices)
+        if unknown_fake_sources:
+            symbols = ", ".join(sorted(unknown_fake_sources))
+            raise PortfolioConfigurationError(
+                f"hay procedencias fake sin precio configurado: {symbols}"
+            )
         price_reference_rules: dict[str, PriceReferenceThresholds] = {}
         known_instrument_ids = {instrument.id for instrument in instruments}
         for index, (position, raw_position) in enumerate(
@@ -96,6 +112,7 @@ def load_portfolio(path: str | Path) -> PortfolioConfiguration:
         return PortfolioConfiguration(
             portfolio=portfolio,
             fake_prices=MappingProxyType(fake_prices),
+            fake_quote_sources=MappingProxyType(fake_quote_sources),
             price_reference_rules=MappingProxyType(price_reference_rules),
         )
     except (TypeError, ValueError) as error:
@@ -218,6 +235,17 @@ def _decimal(value: Any, field_name: str) -> Decimal:
     if not decimal.is_finite():
         raise PortfolioConfigurationError(f"{field_name} debe ser finito")
     return decimal
+
+
+def _quote_source(value: Any, field_name: str) -> QuoteSource:
+    text = _text(value, field_name)
+    try:
+        return QuoteSource(text)
+    except ValueError as error:
+        allowed = ", ".join(source.value for source in QuoteSource)
+        raise PortfolioConfigurationError(
+            f"{field_name} debe ser una de: {allowed}"
+        ) from error
 
 
 def _timestamp(value: Any, field_name: str) -> datetime:

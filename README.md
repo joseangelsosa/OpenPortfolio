@@ -36,9 +36,11 @@ La primera configuración operativa no contiene posiciones, cantidades, precios 
   --provider yfinance
 ```
 
-La comprobación muestra para cada instrumento el nombre, símbolo solicitado, precio, moneda recibida, timestamp y resultado. Una moneda distinta de `expected_currency` o cualquier fallo de consulta marca el símbolo como fallido; aun así se consultan los demás y el proceso termina con código distinto de cero al final.
+La comprobación muestra para cada instrumento el nombre, símbolo solicitado, precio, moneda recibida, timestamp, procedencia (`source`) y resultado. Una moneda distinta de `expected_currency` o cualquier fallo de consulta marca el símbolo como fallido; aun así se consultan los demás y el proceso termina con código distinto de cero al final.
 
-El adaptador usa el último cierre diario utilizable de los últimos cinco días. yfinance es un servicio externo no contractual: requiere red, puede sufrir límites o cambios de API, tener retrasos, devolver moneda o timestamps incompletos y no garantiza disponibilidad ni calidad para todos los símbolos. OpenPortfolio trata esas situaciones como errores explícitos del instrumento; no sustituye precios ausentes por cero. No hay reintentos complejos en este incremento.
+El adaptador de yfinance solicita primero velas intradía de 5 minutos de la sesión ordinaria (`period="1d"`, `interval="5m"`, `prepost=False`). Elige la vela válida más reciente cuyo intervalo de cinco minutos ya haya terminado y cuya fecha, en la zona horaria de la vela, coincida con la fecha de consulta. Si no existe una vela así —incluidos mercado cerrado, respuesta vacía, datos inválidos o fallo técnico— recurre al último cierre diario utilizable de los últimos cinco días.
+
+`INTRADAY` significa que el precio procede de una vela intradía completa de 5 minutos; `DAILY_CLOSE` significa que procede del respaldo de cierre diario. El timestamp siempre corresponde al dato de mercado y no a una hora inventada de ejecución. yfinance es un servicio externo no contractual y no una fuente profesional con tiempo real garantizado: requiere red, puede sufrir límites o cambios de API, tener retrasos y devolver moneda o timestamps incompletos. OpenPortfolio trata esas situaciones como errores explícitos del instrumento; no sustituye precios ausentes por cero. No hay reintentos complejos en este incremento.
 
 ## Revisión y alertas
 
@@ -87,7 +89,7 @@ Abre **Actions → Portfolio review → Run workflow** y selecciona:
 - `provider`: `fake` es la opción segura predeterminada; `yfinance` usa `examples/operational_review.yaml` y consulta datos reales.
 - `dry_run`: está activado por defecto. Para `yfinance` es obligatorio y el workflow rechaza explícitamente cualquier otra combinación.
 
-El workflow ejecuta los tests y muestra el resultado por consola. Con `operation: check-real-quotes`, fuerza yfinance y `--check-quotes`, omite por completo los pasos de restauración y guardado de estado, no construye ni contacta ntfy, no permite notificaciones y no requiere secretos. No hay ningún `schedule`. Las opciones `provider` y `dry_run` continúan aplicándose sin cambios a `operation: review`; una revisión dry-run no guarda ni modifica `state/alert_state.json`.
+El workflow ejecuta los tests y muestra el resultado por consola. Para ejecutar la estrategia intradía con respaldo diario, selecciona `operation: check-real-quotes` (los otros inputs no alteran esta operación). Esta opción fuerza yfinance y `--check-quotes`, omite por completo los pasos de restauración y guardado de estado, no construye ni contacta ntfy, no permite notificaciones y no requiere secretos. No hay ningún `schedule`. Las opciones `provider` y `dry_run` continúan aplicándose sin cambios a `operation: review`; una revisión dry-run no guarda ni modifica `state/alert_state.json`.
 
 GitHub Actions cache es la solución inicial de persistencia de la v1, no almacenamiento permanente garantizado: GitHub puede desalojar cachés, aplica límites de retención y una caché ausente hace que la siguiente ejecución se comporte como una primera ejecución. Por ello reduce duplicados entre runners, pero no ofrece las garantías de una base de datos.
 

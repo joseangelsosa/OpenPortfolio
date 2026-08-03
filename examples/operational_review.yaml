@@ -60,3 +60,4 @@ review_rules:
     enabled: false
 
 fake_market_data: {}
+fake_market_data_sources: {}

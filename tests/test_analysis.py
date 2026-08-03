@@ -5,7 +5,7 @@ import pytest
 
 from openportfolio.alerts import alert_from_event, alerts_from_events, format_alert_body
 from openportfolio.analysis import PriceReferenceChangeRule, PriceReferenceThresholds
-from openportfolio.domain import AnalysisEvent, Instrument, MarketQuote, Severity
+from openportfolio.domain import AnalysisEvent, Instrument, MarketQuote, QuoteSource, Severity
 
 
 NOW = datetime(2026, 1, 2, 16, 0, tzinfo=timezone.utc)
@@ -20,7 +20,15 @@ def evaluate(
 ) -> AnalysisEvent | None:
     instrument = Instrument("asset", "Demo Equity", "STOCK", "USD", {"fake": "FAKE"})
     quote = MarketQuote(
-        "quote", "asset", Decimal(current), "USD", NOW, NOW, "fake", "FAKE"
+        "quote",
+        "asset",
+        Decimal(current),
+        "USD",
+        NOW,
+        NOW,
+        "fake",
+        "FAKE",
+        QuoteSource.INTRADAY,
     )
     return PriceReferenceChangeRule().evaluate(
         portfolio_id="portfolio",

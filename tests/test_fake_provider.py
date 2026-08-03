@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from openportfolio.domain import Instrument
+from openportfolio.domain import Instrument, QuoteSource
 from openportfolio.market_data import MarketDataNotFoundError, ProviderSymbolError
 from openportfolio.providers import FakeMarketDataProvider
 
@@ -19,6 +19,7 @@ def test_fake_provider_is_deterministic_and_offline() -> None:
     assert first == second
     assert first.price == Decimal("12.34")
     assert first.provider == "fake"
+    assert first.source is QuoteSource.INTRADAY
     assert first.observed_at.tzinfo is not None
 
 
@@ -33,3 +34,10 @@ def test_fake_provider_reports_missing_symbol() -> None:
     with pytest.raises(ProviderSymbolError, match="no tiene símbolo"):
         provider.get_quote(make_instrument(None))
 
+
+def test_fake_provider_uses_configured_explicit_source() -> None:
+    provider = FakeMarketDataProvider(
+        {"FAKE-ASSET": Decimal("12.34")},
+        {"FAKE-ASSET": QuoteSource.DAILY_CLOSE},
+    )
+    assert provider.get_quote(make_instrument()).source is QuoteSource.DAILY_CLOSE

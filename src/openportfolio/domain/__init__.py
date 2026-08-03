@@ -7,6 +7,7 @@ from openportfolio.domain.models import (
     MarketQuote,
     Portfolio,
     Position,
+    QuoteSource,
     Severity,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "MarketQuote",
     "Portfolio",
     "Position",
+    "QuoteSource",
     "Severity",
 ]

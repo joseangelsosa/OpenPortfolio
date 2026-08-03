@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from openportfolio.domain import Instrument, MarketQuote, Portfolio, Position
+from openportfolio.domain import Instrument, MarketQuote, Portfolio, Position, QuoteSource
 
 
 NOW = datetime(2026, 1, 2, 16, 0, tzinfo=timezone.utc)
@@ -39,6 +39,7 @@ def quote(identifier: str = "asset-eur", currency: str = "EUR") -> MarketQuote:
         retrieved_at=NOW,
         provider="fake",
         provider_symbol=f"FAKE-{identifier}",
+        source=QuoteSource.INTRADAY,
     )
 
 
@@ -77,6 +78,21 @@ def test_position_requires_decimal_quantity_and_aware_timestamp() -> None:
             "asset-eur",
             Decimal("2.5"),
             datetime(2026, 1, 2, 16, 0),
+        )
+
+
+def test_quote_requires_explicit_source_enum() -> None:
+    with pytest.raises(TypeError, match="QuoteSource"):
+        MarketQuote(
+            id="quote",
+            instrument_id="asset-eur",
+            price=Decimal("10"),
+            currency="EUR",
+            observed_at=NOW,
+            retrieved_at=NOW,
+            provider="fake",
+            provider_symbol="FAKE",
+            source="INTRADAY",  # type: ignore[arg-type]
         )
 
 
@@ -127,4 +143,3 @@ def test_totals_keep_different_currencies_separate() -> None:
     )
     assert totals == {"EUR": Decimal("25.500"), "USD": Decimal("25.500")}
     assert len(totals) == 2
-

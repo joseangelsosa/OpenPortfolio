@@ -12,7 +12,7 @@ from openportfolio.application import (
     check_portfolio_quotes,
     run_portfolio_review,
 )
-from openportfolio.domain import MarketQuote, Portfolio
+from openportfolio.domain import MarketQuote, Portfolio, QuoteSource
 from openportfolio.market_data import MarketDataError, MarketDataProvider
 from openportfolio.persistence import (
     DEFAULT_ALERT_STATE_PATH,
@@ -60,7 +60,11 @@ def _valuation_main(argv: Sequence[str]) -> int:
 
     try:
         configuration = load_portfolio(args.portfolio)
-        provider = _provider(args.provider, configuration.fake_prices)
+        provider = _provider(
+            args.provider,
+            configuration.fake_prices,
+            configuration.fake_quote_sources,
+        )
     except (PortfolioConfigurationError, ImportError) as error:
         parser.error(str(error))
 
@@ -135,7 +139,11 @@ def _review_main(argv: Sequence[str]) -> int:
 
     try:
         configuration = load_portfolio(args.portfolio)
-        provider = _provider(args.provider, configuration.fake_prices)
+        provider = _provider(
+            args.provider,
+            configuration.fake_prices,
+            configuration.fake_quote_sources,
+        )
         if args.dry_run or args.notifier == "console":
             notifier = ConsoleNotifier()
         else:
@@ -175,9 +183,13 @@ def _review_main(argv: Sequence[str]) -> int:
     return 0
 
 
-def _provider(name: str, fake_prices: Mapping[str, Decimal]) -> MarketDataProvider:
+def _provider(
+    name: str,
+    fake_prices: Mapping[str, Decimal],
+    fake_sources: Mapping[str, QuoteSource],
+) -> MarketDataProvider:
     if name == "fake":
-        return FakeMarketDataProvider(fake_prices)
+        return FakeMarketDataProvider(fake_prices, fake_sources)
     from openportfolio.providers.yfinance import YFinanceMarketDataProvider
 
     return YFinanceMarketDataProvider()
@@ -244,15 +256,17 @@ def _print_quote_check(items: Sequence[QuoteCheckItem]) -> None:
         quote = item.quote
         error = item.error
         if quote is None:
-            price = currency = timestamp = "—"
+            price = currency = timestamp = source = "—"
         else:
             price = _number(quote.price)
             currency = quote.currency
             timestamp = quote.observed_at.isoformat()
+            source = quote.source.value
         result = "OK" if error is None else f"ERROR — {error}"
         print(
             f"{instrument.name} | símbolo: {symbol} | precio: {price} | "
-            f"moneda: {currency} | timestamp: {timestamp} | resultado: {result}"
+            f"moneda: {currency} | timestamp: {timestamp} | source: {source} | "
+            f"resultado: {result}"
         )
         if error is not None:
             failed_symbols.append(symbol if symbol != "—" else instrument.id)

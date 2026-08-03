@@ -36,6 +36,11 @@ class Severity(StrEnum):
     HIGH = "HIGH"
 
 
+class QuoteSource(StrEnum):
+    INTRADAY = "INTRADAY"
+    DAILY_CLOSE = "DAILY_CLOSE"
+
+
 def _stable_identifier(prefix: str, payload: Mapping[str, str]) -> str:
     canonical = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     return f"{prefix}-{sha256(canonical.encode('utf-8')).hexdigest()[:24]}"
@@ -245,6 +250,7 @@ class MarketQuote:
     retrieved_at: datetime
     provider: str
     provider_symbol: str
+    source: QuoteSource
     kind: str = "last_available"
 
     def __post_init__(self) -> None:
@@ -261,6 +267,8 @@ class MarketQuote:
             raise ValueError("quote.observed_at no puede ser posterior a retrieved_at")
         object.__setattr__(self, "provider", _required_text(self.provider, "quote.provider"))
         object.__setattr__(self, "provider_symbol", _required_text(self.provider_symbol, "quote.provider_symbol"))
+        if not isinstance(self.source, QuoteSource):
+            raise TypeError("quote.source debe ser QuoteSource")
         object.__setattr__(self, "kind", _required_text(self.kind, "quote.kind"))
 
 

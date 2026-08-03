@@ -41,3 +41,7 @@ positions:
 fake_market_data:
   FAKE-EUR-ETF: "42.40"
   FAKE-USD-STOCK: "123.45"
+
+fake_market_data_sources:
+  FAKE-EUR-ETF: DAILY_CLOSE
+  FAKE-USD-STOCK: INTRADAY

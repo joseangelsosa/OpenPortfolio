@@ -5,7 +5,7 @@ import pytest
 
 from openportfolio.application import check_portfolio_quotes
 from openportfolio.cli import main
-from openportfolio.domain import Instrument, MarketQuote, Portfolio
+from openportfolio.domain import Instrument, MarketQuote, Portfolio, QuoteSource
 from openportfolio.market_data import MarketDataNotFoundError
 
 
@@ -34,6 +34,7 @@ def _quote(
     instrument: Instrument,
     currency: str | None = None,
     provider_name: str = "test",
+    source: QuoteSource = QuoteSource.INTRADAY,
 ) -> MarketQuote:
     symbol = instrument.symbol_for(provider_name)
     assert symbol is not None
@@ -46,6 +47,7 @@ def _quote(
         retrieved_at=NOW,
         provider=provider_name,
         provider_symbol=symbol,
+        source=source,
     )
 
 
@@ -141,3 +143,29 @@ def test_cli_returns_nonzero_summarizes_all_results_and_uses_no_side_effects(
     assert "H4ZF.DE" in captured.out and "GOOGL" in captured.out and "MSFT" in captured.out
     assert "TOPIC-MUY-SECRETO" not in captured.out
     assert "ntfy" not in captured.out.lower()
+
+
+@pytest.mark.parametrize("source", list(QuoteSource))
+def test_cli_displays_quote_source(
+    source: QuoteSource,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class SourceProvider(StubProvider):
+        def get_quote(self, instrument: Instrument) -> MarketQuote:
+            self.requested.append(instrument.symbol_for(self.name) or "")
+            return _quote(instrument, provider_name=self.name, source=source)
+
+    monkeypatch.setattr("openportfolio.cli._provider", lambda *_: SourceProvider(name="yfinance"))
+    result = main(
+        [
+            "--check-quotes",
+            "--portfolio",
+            "examples/operational_review.yaml",
+            "--provider",
+            "yfinance",
+        ]
+    )
+
+    assert result == 0
+    assert f"source: {source.value}" in capsys.readouterr().out

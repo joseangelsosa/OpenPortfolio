@@ -158,6 +158,7 @@ Representa una observación de mercado normalizada y desacoplada del objeto nati
 | `retrieved_at` | `Timestamp` | Sí | Instante de obtención. |
 | `provider` | `ProviderName` | Sí | Proveedor que originó el dato. |
 | `provider_symbol` | `Text` | Sí | Símbolo solicitado al proveedor. |
+| `source` | `Enum` | Sí | Procedencia explícita: `INTRADAY` o `DAILY_CLOSE`. |
 | `kind` | `Enum` | Sí | Naturaleza del dato, por ejemplo cierre, último disponible o tipo de cambio. |
 | `quality` | `Enum` | Sí | Estado de frescura normalizado, por ejemplo válido, `stale` o no utilizable. |
 

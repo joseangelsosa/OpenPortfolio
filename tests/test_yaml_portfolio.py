@@ -7,6 +7,7 @@ from openportfolio.persistence.yaml_portfolio import (
     PortfolioConfigurationError,
     load_portfolio,
 )
+from openportfolio.domain import QuoteSource
 
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "demo_portfolio.yaml"
@@ -23,6 +24,10 @@ def test_loads_fictitious_yaml_portfolio() -> None:
     assert portfolio.positions[0].quantity == Decimal("7.25")
     assert portfolio.positions[0].as_of.utcoffset() is not None
     assert configuration.fake_prices["FAKE-EUR-ETF"] == Decimal("42.40")
+    assert configuration.fake_quote_sources == {
+        "FAKE-EUR-ETF": QuoteSource.DAILY_CLOSE,
+        "FAKE-USD-STOCK": QuoteSource.INTRADAY,
+    }
 
 
 def test_yaml_rejects_float_quantity_to_avoid_binary_precision(tmp_path: Path) -> None:
@@ -82,6 +87,7 @@ def test_operational_review_has_no_positions_or_enabled_investment_rules() -> No
     assert portfolio.positions == ()
     assert configuration.price_reference_rules == {}
     assert configuration.fake_prices == {}
+    assert configuration.fake_quote_sources == {}
     assert {instrument.id for instrument in portfolio.instruments} == {
         "sp500-etf",
         "nvidia",
