@@ -21,7 +21,7 @@ La arquitectura se guía por estos principios:
 
 Contiene el vocabulario común, los modelos de dominio, identificadores, tipos de valor y validaciones invariantes. Incluye conceptos como `Instrument`, `Transaction`, `MarketQuote`, `AnalysisEvent` y `Alert`, definidos conceptualmente en [data-model.md](data-model.md).
 
-No conoce yfinance, Telegram, Streamlit, formatos de archivos ni mecanismos de ejecución. Tampoco contiene reglas específicas de presentación o transporte.
+No conoce yfinance, ntfy, Streamlit, formatos de archivos ni mecanismos de ejecución. Tampoco contiene reglas específicas de presentación o transporte.
 
 ### Portfolio
 
@@ -87,9 +87,9 @@ Estos eventos activan una revisión y no una orden ni un rebalanceo inmediato. L
 
 Transforma uno o varios `AnalysisEvent` en un `Alert` apto para un canal. Sus responsabilidades incluyen deduplicación, agrupación, prioridad, estado de entrega y renderizado de un contenido informativo.
 
-Para evitar fatiga, una condición abierta no se notifica en cada ejecución. Solo se reenvía si aumenta la severidad, cambia materialmente el valor según una tolerancia configurada o vence el periodo de recordatorio. Una condición resuelta puede reabrirse si vuelve a cruzar el umbral. Telegram recibe únicamente alertas `REVIEW` o `HIGH` y fallos técnicos definitivos; no se envía un mensaje diario para indicar que todo está correcto.
+Para evitar fatiga, el diseño futuro prevé que una condición abierta no se notifique en cada ejecución. Solo se reenviará si aumenta la severidad, cambia materialmente el valor según una tolerancia configurada o vence el periodo de recordatorio. Una condición resuelta podrá reabrirse si vuelve a cruzar el umbral. La vertical mínima actual no tiene persistencia ni deduplicación: ntfy recibe únicamente alertas `REVIEW` o `HIGH`; `INFO` no se envía.
 
-El envío por Telegram será una incorporación posterior detrás de una interfaz de entrega. El token y el destino se obtendrán en tiempo de ejecución mediante variables de entorno o secretos de GitHub Actions; nunca serán parte del dominio, la configuración versionada ni los registros.
+El envío por ntfy está detrás de una interfaz de entrega. El servidor y el topic se obtienen en tiempo de ejecución mediante variables de entorno o GitHub Actions Secrets; el topic se trata como secreto y nunca forma parte del dominio, la configuración versionada ni los registros.
 
 ### Presentation
 
@@ -145,7 +145,7 @@ Reglas adicionales:
 - `Providers` implementa contratos de `Market Data`; no es una dependencia del núcleo.
 - `Presentation` y los canales de `Alerts` son extremos de entrada o salida y no son reutilizados por el dominio.
 - el módulo de composición elige implementaciones y coordina los casos de uso; no contiene reglas de negocio.
-- una base de datos, yfinance, Telegram o Streamlit pueden reemplazarse sin cambiar las reglas deterministas.
+- una base de datos, yfinance, ntfy o Streamlit pueden reemplazarse sin cambiar las reglas deterministas.
 
 ## Flujo desde el precio hasta la alerta
 
@@ -154,8 +154,8 @@ Reglas adicionales:
 3. Los adaptadores obtienen los datos y los normalizan como `MarketQuote`, conservando proveedor, instante, moneda y frescura.
 4. `Portfolio` combina posiciones, cotizaciones y FX compatibles para crear un `PortfolioSnapshot` consolidado en EUR. Si falta un precio o cambio, o está obsoleto, lo refleja explícitamente; no lo sustituye silenciosamente.
 5. `Analysis` ejecuta reglas deterministas y genera cero o más `AnalysisEvent` con evidencia estructurada.
-6. `Alerts` aplica políticas de deduplicación y agrupación y genera un `Alert` informativo.
-7. En local, la salida puede mostrarse por consola o representarse como JSON generado. En una fase posterior, un adaptador entrega a Telegram solo los niveles y fallos configurados.
+6. La vertical mínima de `Alerts` filtra severidades y genera un `Alert` informativo; las políticas de deduplicación y agrupación quedan pendientes.
+7. En local, la salida puede mostrarse por consola; un adaptador reemplazable puede entregar mediante ntfy únicamente `REVIEW` y `HIGH`.
 8. El resultado de la ejecución indica de forma observable si hubo éxito, datos incompletos o un fallo técnico; un fallo de proveedor no se presenta como señal financiera.
 
 ## Sustitución de yfinance
@@ -195,12 +195,12 @@ Quedan fuera de alcance:
 ## Privacidad y seguridad
 
 - El repositorio solo incluirá ejemplos ficticios y nunca extractos reales, credenciales, tokens ni datos personales. Los datos generados o filas originales de importación permanecerán fuera del repositorio público.
-- Los secretos de Telegram y de futuros servicios se inyectarán mediante variables de entorno en local y GitHub Actions Secrets en automatización.
-- Los errores y registros evitarán volcar configuración completa, identificadores de chat, tokens o documentos importados.
+- El topic secreto de ntfy y los secretos de futuros servicios se inyectarán mediante variables de entorno en local y GitHub Actions Secrets en automatización.
+- Los errores y registros evitarán volcar configuración completa, topics, URLs de publicación o documentos importados.
 - La importación manual futura aplicará minimización de datos, validación antes de uso y una ruta local explícita; el archivo original no se versionará.
 - Las dependencias externas quedarán confinadas a adaptadores y se fijarán y revisarán cuando se incorporen.
 - Las alertas serán informativas, mostrarán la antigüedad y procedencia de los datos cuando sea relevante y no incluirán acciones ejecutables de trading.
-- Se aplicará mínimo privilegio a permisos de GitHub Actions y Telegram cuando esas integraciones existan.
+- Se aplica mínimo privilegio a GitHub Actions y el topic de ntfy nunca se registra.
 
 ## Ejecución local y GitHub Actions
 
@@ -208,11 +208,11 @@ La misma aplicación y los mismos casos de uso se ejecutarán en ambos entornos;
 
 En local, una invocación manual cargará un archivo YAML ficticio, consultará precios y FX y presentará el informe, las alertas o un resultado JSON. La hora se mostrará en `Europe/Madrid`, aunque los instantes canónicos se conserven en UTC. Los tests usarán proveedores simulados y datos fijos para no depender de red, hora o disponibilidad de yfinance.
 
-En GitHub Actions, el baseline prevé una ejecución diaria de lunes a viernes a las 22:30 UTC, después del cierre del mercado estadounidense, y ejecución manual mediante `workflow_dispatch`. No habrá comprobaciones intradía; el horario programado es aproximado y no presupone ejecución exacta al minuto. Un resumen semanal podrá añadirse después y el resumen ordinario se consultará bajo demanda.
+En GitHub Actions, la vertical actual solo admite ejecución manual mediante `workflow_dispatch`. El horario diario previsto por el baseline queda pendiente y no se añade todavía. Un resumen semanal podrá añadirse después y el resumen ordinario se consultará bajo demanda.
 
-El workflow tendrá únicamente `contents: read`, timeout limitado y control de concurrencia. No podrá hacer commits, crear releases o pull requests ni modificar el repositorio. Los secretos de Telegram residirán solo en GitHub Actions Secrets y no aparecerán en logs. Los resultados temporales se conservarán como artifacts únicamente cuando sea necesario, nunca mediante commits automáticos.
+El workflow tiene únicamente `contents: read`, timeout limitado y control de concurrencia. No puede hacer commits, crear releases o pull requests ni modificar el repositorio. El servidor y el topic de ntfy se resuelven desde GitHub Actions Secrets, con `https://ntfy.sh` como servidor predeterminado, y no aparecen en logs.
 
-Los fallos temporales del proveedor admitirán hasta tres intentos con espera progresiva. Los errores de configuración, validación o credenciales no se reintentarán. Si se agotan los intentos, se generará una sola alerta técnica. Estas decisiones describen el baseline futuro; la creación del workflow y cualquier configuración de producción siguen fuera de esta tarea.
+Los fallos temporales del proveedor admitirán en una fase posterior hasta tres intentos con espera progresiva. Los errores de configuración, validación o credenciales no se reintentarán. Si se agotan los intentos, se generará una sola alerta técnica. El workflow manual mínimo ya existe; su primera activación con un topic real requiere revisión humana.
 
 ## Investment Operating System
 

@@ -213,7 +213,7 @@ Representa una notificación preparada a partir de eventos; su estado de entrega
 |---|---|---:|---|
 | `id` | `Identifier` | Sí | Identidad de la alerta. |
 | `event_ids` | `NonEmptySet<Identifier>` | Sí | Eventos incluidos. |
-| `channel` | `Enum` | Sí | Canal de salida, inicialmente local y después Telegram. |
+| `channel` | `Enum` | Sí | Canal de salida, inicialmente consola y ntfy. |
 | `destination_ref` | `SecretReference` | No | Referencia externa al destino; nunca el secreto o identificador sensible en claro. |
 | `priority` | `Enum` | Sí | Prioridad derivada de severidades mediante política determinista. |
 | `title` | `Text` | Sí | Resumen informativo. |
@@ -236,7 +236,7 @@ Validación:
 - prioridad, agrupación y clave de deduplicación siguen políticas versionadas;
 - una condición abierta solo se reenvía si aumenta la severidad, cambia materialmente según la tolerancia configurada o vence `reminder_due_at`;
 - una condición resuelta puede pasar a reabierta cuando vuelva a cruzar el umbral, conservando el vínculo con su historial;
-- Telegram solo recibe `REVIEW`, `HIGH` o un fallo técnico definitivo; `INFO` queda disponible para consulta y no se envía un mensaje diario de estado correcto;
+- ntfy solo recibe `REVIEW`, `HIGH` o un fallo técnico definitivo; `INFO` queda disponible para consulta y no se envía un mensaje diario de estado correcto;
 - `title` y `body` no prometen certeza, no recomiendan operaciones y distinguen evidencia de explicación;
 - una explicación generada es opcional, está etiquetada y no modifica eventos, prioridad ni estado;
 - las transiciones de ciclo de vida y entrega son válidas e independientes, y cada intento añade trazabilidad sin sobrescribir el historial;
