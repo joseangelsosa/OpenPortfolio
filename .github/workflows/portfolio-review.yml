@@ -31,10 +31,26 @@ jobs:
         run: python -m pytest
 
       - name: Run offline portfolio review
-        run: openportfolio review --provider fake --notifier console
+        run: openportfolio review --provider fake --notifier console --dry-run
+
+      - name: Restore alert delivery state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/alert_state.json
+          key: alert-state-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            alert-state-${{ runner.os }}-
 
       - name: Send ntfy review alerts
+        id: operational-review
         env:
           OPENPORTFOLIO_NTFY_SERVER: ${{ secrets.OPENPORTFOLIO_NTFY_SERVER }}
           OPENPORTFOLIO_NTFY_TOPIC: ${{ secrets.OPENPORTFOLIO_NTFY_TOPIC }}
         run: openportfolio review --provider fake --notifier ntfy
+
+      - name: Save updated alert delivery state
+        if: always() && hashFiles('state/alert_state.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state/alert_state.json
+          key: alert-state-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}

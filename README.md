@@ -44,6 +44,12 @@ El ejemplo incluido es completamente ficticio. Sus precios y umbrales están pre
 
 Cada posición configura en YAML `reference_price`, `review_change_percent` y `high_change_percent`. Una alerta solo inicia una revisión humana: no es una recomendación ni una instrucción de compra o venta.
 
+La revisión conserva por defecto el estado de entregas en `state/alert_state.json`. El archivo JSON tiene una versión de esquema y un mapa `delivered_alerts`; cada entrada contiene únicamente el ID determinista de alerta, el ID del evento y la severidad entregada. No contiene configuración de ntfy, topics ni secretos. La ruta puede cambiarse con `--state-path`.
+
+Después de que cualquier `Notifier` confirme una entrega, el estado se reemplaza de forma atómica. Una ejecución posterior suprime una alerta con el mismo ID ya entregado. Un escalado de `REVIEW` a `HIGH` produce una identidad determinista diferente y vuelve a notificarse. Los fallos de entrega y las ejecuciones `--dry-run` no modifican el estado. Por ahora no existen recordatorios periódicos, detección de recuperación ni rearme de condiciones.
+
+Si el archivo todavía no existe, la ejecución se considera la primera y se crea el directorio al registrar la primera entrega. Si está corrupto o usa una versión desconocida, la aplicación termina con un error explícito y conserva el archivo anterior. El estado local es generado y está excluido de Git.
+
 Para construir y ver exactamente el contenido de una notificación ntfy sin realizar ninguna llamada HTTP ni exigir un topic:
 
 ```bash
@@ -72,7 +78,9 @@ En GitHub, abre **Settings → Secrets and variables → Actions** y crea estos 
 - `OPENPORTFOLIO_NTFY_TOPIC`: el topic secreto elegido.
 - `OPENPORTFOLIO_NTFY_SERVER`: el servidor alternativo, si se necesita. Si no existe, el workflow usa `https://ntfy.sh`.
 
-Después abre **Actions → Portfolio review → Run workflow**. El workflow ejecuta primero todos los tests y la revisión ficticia en consola; únicamente después intenta el envío real. Solo tiene disparador manual, por lo que todavía no existe ejecución programada. Si falta el topic, el paso final falla con un error de configuración saneado.
+Después abre **Actions → Portfolio review → Run workflow**. El workflow ejecuta primero todos los tests y una vista previa ficticia en consola. Antes de la revisión operativa restaura `state/alert_state.json` con GitHub Actions cache; después guarda el estado actualizado con una clave única por ejecución y usa `restore-keys` para recuperar la versión disponible más reciente. La ejecución continúa siendo manual y el proveedor operativo sigue siendo `fake`; no se realizan commits automáticos.
+
+GitHub Actions cache es la solución inicial de persistencia de la v1, no almacenamiento permanente garantizado: GitHub puede desalojar cachés, aplica límites de retención y una caché ausente hace que la siguiente ejecución se comporte como una primera ejecución. Por ello reduce duplicados entre runners, pero no ofrece las garantías de una base de datos. Si falta el topic, el paso operativo falla con un error de configuración saneado.
 
 ## Tests
 

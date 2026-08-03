@@ -87,7 +87,7 @@ Estos eventos activan una revisión y no una orden ni un rebalanceo inmediato. L
 
 Transforma uno o varios `AnalysisEvent` en un `Alert` apto para un canal. Sus responsabilidades incluyen deduplicación, agrupación, prioridad, estado de entrega y renderizado de un contenido informativo.
 
-Para evitar fatiga, el diseño futuro prevé que una condición abierta no se notifique en cada ejecución. Solo se reenviará si aumenta la severidad, cambia materialmente el valor según una tolerancia configurada o vence el periodo de recordatorio. Una condición resuelta podrá reabrirse si vuelve a cruzar el umbral. La vertical mínima actual no tiene persistencia ni deduplicación: ntfy recibe únicamente alertas `REVIEW` o `HIGH`; `INFO` no se envía.
+Para evitar fatiga, la vertical mínima guarda los IDs deterministas de alertas entregadas en un almacén JSON reemplazable y suprime una identidad ya registrada. Un aumento de severidad produce una identidad nueva y se entrega otra vez. El cambio material configurable, los recordatorios y la reapertura tras recuperación siguen pendientes. ntfy recibe únicamente alertas `REVIEW` o `HIGH`; `INFO` no se envía.
 
 El envío por ntfy está detrás de una interfaz de entrega. El servidor y el topic se obtienen en tiempo de ejecución mediante variables de entorno o GitHub Actions Secrets; el topic se trata como secreto y nunca forma parte del dominio, la configuración versionada ni los registros.
 
@@ -154,8 +154,8 @@ Reglas adicionales:
 3. Los adaptadores obtienen los datos y los normalizan como `MarketQuote`, conservando proveedor, instante, moneda y frescura.
 4. `Portfolio` combina posiciones, cotizaciones y FX compatibles para crear un `PortfolioSnapshot` consolidado en EUR. Si falta un precio o cambio, o está obsoleto, lo refleja explícitamente; no lo sustituye silenciosamente.
 5. `Analysis` ejecuta reglas deterministas y genera cero o más `AnalysisEvent` con evidencia estructurada.
-6. La vertical mínima de `Alerts` filtra severidades y genera un `Alert` informativo; las políticas de deduplicación y agrupación quedan pendientes.
-7. En local, la salida puede mostrarse por consola; un adaptador reemplazable puede entregar mediante ntfy únicamente `REVIEW` y `HIGH`.
+6. La vertical mínima de `Alerts` filtra severidades y genera un `Alert` informativo; la orquestación suprime identidades ya entregadas mediante el puerto de estado, mientras que la agrupación queda pendiente.
+7. En local, la salida puede mostrarse por consola; un adaptador reemplazable puede entregar mediante ntfy únicamente `REVIEW` y `HIGH`. Solo una entrega confirmada actualiza el estado.
 8. El resultado de la ejecución indica de forma observable si hubo éxito, datos incompletos o un fallo técnico; un fallo de proveedor no se presenta como señal financiera.
 
 ## Sustitución de yfinance
@@ -209,6 +209,8 @@ La misma aplicación y los mismos casos de uso se ejecutarán en ambos entornos;
 En local, una invocación manual cargará un archivo YAML ficticio, consultará precios y FX y presentará el informe, las alertas o un resultado JSON. La hora se mostrará en `Europe/Madrid`, aunque los instantes canónicos se conserven en UTC. Los tests usarán proveedores simulados y datos fijos para no depender de red, hora o disponibilidad de yfinance.
 
 En GitHub Actions, la vertical actual solo admite ejecución manual mediante `workflow_dispatch`. El horario diario previsto por el baseline queda pendiente y no se añade todavía. Un resumen semanal podrá añadirse después y el resumen ordinario se consultará bajo demanda.
+
+La v1 restaura y conserva `state/alert_state.json` entre runners mediante GitHub Actions cache. Cada ejecución usa una clave nueva y `restore-keys` recupera la caché reciente disponible. Es una persistencia inicial sin garantía de permanencia: las políticas de retención, los límites y el desalojo de GitHub pueden causar una nueva primera ejecución.
 
 El workflow tiene únicamente `contents: read`, timeout limitado y control de concurrencia. No puede hacer commits, crear releases o pull requests ni modificar el repositorio. El servidor y el topic de ntfy se resuelven desde GitHub Actions Secrets, con `https://ntfy.sh` como servidor predeterminado, y no aparecen en logs.
 

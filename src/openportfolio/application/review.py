@@ -8,7 +8,7 @@ from openportfolio.alerts import Notifier, alerts_from_events
 from openportfolio.analysis import PriceReferenceChangeRule
 from openportfolio.domain import Alert, AnalysisEvent, MarketQuote
 from openportfolio.market_data import MarketDataError, MarketDataProvider
-from openportfolio.persistence import PortfolioConfiguration
+from openportfolio.persistence import AlertState, AlertStateStore, PortfolioConfiguration
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +16,8 @@ class ReviewResult:
     quotes: Mapping[str, MarketQuote]
     events: tuple[AnalysisEvent, ...]
     alerts: tuple[Alert, ...]
+    delivered_alerts: tuple[Alert, ...]
+    suppressed_alerts: tuple[Alert, ...]
     quote_errors: Mapping[str, str]
     notification_errors: tuple[str, ...]
 
@@ -25,14 +27,18 @@ class ReviewResult:
 
     @property
     def notifications_sent(self) -> int:
-        return len(self.alerts) - len(self.notification_errors)
+        return len(self.delivered_alerts)
 
 
 def run_portfolio_review(
     configuration: PortfolioConfiguration,
     provider: MarketDataProvider,
     notifier: Notifier,
+    *,
+    state_store: AlertStateStore | None = None,
+    dry_run: bool = False,
 ) -> ReviewResult:
+    state = state_store.load() if state_store is not None else AlertState.empty()
     quotes: dict[str, MarketQuote] = {}
     quote_errors: dict[str, str] = {}
     events: list[AnalysisEvent] = []
@@ -61,17 +67,31 @@ def run_portfolio_review(
             events.append(event)
 
     alerts = alerts_from_events(events)
+    delivered_alerts: list[Alert] = []
+    suppressed_alerts: list[Alert] = []
     notification_errors: list[str] = []
     for alert in alerts:
+        if state.was_delivered(alert):
+            suppressed_alerts.append(alert)
+            continue
         try:
             notifier.send(alert)
         except RuntimeError as error:
             notification_errors.append(str(error))
+            continue
+        if dry_run:
+            continue
+        delivered_alerts.append(alert)
+        if state_store is not None:
+            state = state.with_delivered(alert)
+            state_store.save(state)
 
     return ReviewResult(
         quotes=MappingProxyType(quotes),
         events=tuple(events),
         alerts=alerts,
+        delivered_alerts=tuple(delivered_alerts),
+        suppressed_alerts=tuple(suppressed_alerts),
         quote_errors=MappingProxyType(quote_errors),
         notification_errors=tuple(notification_errors),
     )

@@ -116,9 +116,11 @@ Calcular métricas reproducibles y detectar condiciones relevantes mediante regl
 
 ### Estado actual
 
-Se ha adelantado una vertical mínima para demostrar el recorrido completo con datos ficticios: cotización, regla configurable de variación, `AnalysisEvent`, `Alert`, consola y entrega HTTP reemplazable mediante ntfy. Existe un workflow exclusivamente manual que prueba primero la aplicación y luego puede hacer el envío con GitHub Actions Secrets.
+Se ha adelantado una vertical mínima para demostrar el recorrido completo con datos ficticios: cotización, regla configurable de variación, `AnalysisEvent`, `Alert`, consola y entrega HTTP reemplazable mediante ntfy. La orquestación ya suprime IDs de alerta entregados, vuelve a enviar un escalado de severidad y registra el éxito mediante un almacén JSON reemplazable y atómico en `state/alert_state.json`. Los fallos y `dry-run` no se registran.
 
-Este adelanto no completa la Fase 3. Todavía no hay programación automática, deduplicación persistente, agrupación, reapertura, recordatorios, reintentos ni estado duradero de entrega. La Fase 1 continúa pendiente de FX, consolidación EUR, `PortfolioSnapshot`, frescura completa y los demás elementos documentados en su estado actual.
+El workflow sigue siendo exclusivamente manual y usa el proveedor `fake`. Restaura y guarda ese JSON mediante GitHub Actions cache con una clave nueva por ejecución; esta solución inicial de la v1 puede expirar o ser desalojada y no constituye almacenamiento permanente garantizado. No realiza commits automáticos.
+
+Este adelanto no completa la Fase 3. Todavía no hay agrupación, reapertura tras recuperación, recordatorios, reintentos, cambio material configurable ni un almacén con garantías duraderas. La Fase 1 continúa pendiente de FX, consolidación EUR, `PortfolioSnapshot`, frescura completa y los demás elementos documentados en su estado actual.
 
 ### Objetivo
 

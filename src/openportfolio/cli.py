@@ -10,7 +10,12 @@ from openportfolio.alerts import ConsoleNotifier, NotificationConfigurationError
 from openportfolio.application import run_portfolio_review
 from openportfolio.domain import MarketQuote, Portfolio
 from openportfolio.market_data import MarketDataError, MarketDataProvider
-from openportfolio.persistence import load_portfolio
+from openportfolio.persistence import (
+    DEFAULT_ALERT_STATE_PATH,
+    AlertStateError,
+    JsonAlertStateStore,
+    load_portfolio,
+)
 from openportfolio.persistence.yaml_portfolio import PortfolioConfigurationError
 from openportfolio.providers import FakeMarketDataProvider
 
@@ -92,6 +97,12 @@ def _review_main(argv: Sequence[str]) -> int:
         action="store_true",
         help="construye y muestra alertas sin contactar el canal seleccionado",
     )
+    parser.add_argument(
+        "--state-path",
+        type=Path,
+        default=DEFAULT_ALERT_STATE_PATH,
+        help="estado JSON de entregas (por defecto: state/alert_state.json)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -105,12 +116,24 @@ def _review_main(argv: Sequence[str]) -> int:
         print(f"Error de configuración: {error}", file=sys.stderr)
         return 2
 
-    result = run_portfolio_review(configuration, provider, notifier)
+    try:
+        result = run_portfolio_review(
+            configuration,
+            provider,
+            notifier,
+            state_store=JsonAlertStateStore(args.state_path),
+            dry_run=args.dry_run,
+        )
+    except AlertStateError as error:
+        print(f"Error de estado de alertas: {error}", file=sys.stderr)
+        return 2
     if args.dry_run:
         print("DRY RUN — no se envió ninguna notificación.")
     print(
         f"Revisión completada: {len(result.quotes)} cotizaciones, "
-        f"{len(result.events)} eventos, {len(result.alerts)} alertas."
+        f"{len(result.events)} eventos, {len(result.alerts)} alertas generadas, "
+        f"{result.notifications_sent} enviadas, "
+        f"{len(result.suppressed_alerts)} suprimidas por duplicadas."
     )
     for instrument_id, error in result.quote_errors.items():
         print(f"Cotización ausente para {instrument_id}: {error}", file=sys.stderr)
