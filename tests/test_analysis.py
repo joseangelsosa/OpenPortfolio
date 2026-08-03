@@ -15,8 +15,8 @@ def evaluate(
     current: str,
     *,
     reference: str = "100",
-    review: str = "10",
-    high: str = "20",
+    review: str = "5",
+    high: str = "10",
 ) -> AnalysisEvent | None:
     instrument = Instrument("asset", "Demo Equity", "STOCK", "USD", {"fake": "FAKE"})
     quote = MarketQuote(
@@ -42,7 +42,7 @@ def evaluate(
 
 @pytest.mark.parametrize(
     ("current", "expected_change"),
-    [("115", Decimal("15.00")), ("85", Decimal("-15.00"))],
+    [("105", Decimal("5.00")), ("95", Decimal("-5.00"))],
 )
 def test_calculates_positive_and_negative_decimal_change(
     current: str, expected_change: Decimal
@@ -54,21 +54,39 @@ def test_calculates_positive_and_negative_decimal_change(
 
 
 def test_review_threshold_produces_review() -> None:
-    event = evaluate("110")
+    event = evaluate("105")
     assert event is not None
     assert event.severity is Severity.REVIEW
-    assert event.threshold_percent == Decimal("10")
+    assert event.threshold_percent == Decimal("5")
 
 
 def test_high_threshold_produces_high() -> None:
-    event = evaluate("75")
+    event = evaluate("90")
     assert event is not None
     assert event.severity is Severity.HIGH
-    assert event.threshold_percent == Decimal("20")
+    assert event.threshold_percent == Decimal("10")
 
 
 def test_below_threshold_produces_no_event() -> None:
-    assert evaluate("109.99") is None
+    assert evaluate("104.99") is None
+
+
+@pytest.mark.parametrize(
+    ("current", "severity"),
+    [
+        ("105", Severity.REVIEW),
+        ("95", Severity.REVIEW),
+        ("109.99", Severity.REVIEW),
+        ("110", Severity.HIGH),
+        ("90", Severity.HIGH),
+    ],
+)
+def test_operational_boundaries_in_both_directions(
+    current: str, severity: Severity
+) -> None:
+    event = evaluate(current)
+    assert event is not None
+    assert event.severity is severity
 
 
 @pytest.mark.parametrize(
@@ -105,8 +123,8 @@ def test_review_event_becomes_alert_with_stable_identifier() -> None:
 
 
 def test_info_is_filtered_while_review_and_high_are_not() -> None:
-    review = evaluate("115")
-    high = evaluate("125")
+    review = evaluate("105")
+    high = evaluate("110")
     assert review is not None and high is not None
     info = AnalysisEvent.create(
         portfolio_id=review.portfolio_id,
@@ -131,11 +149,12 @@ def test_mobile_message_contains_factual_evidence_and_disclaimer() -> None:
     event = evaluate("115")
     assert event is not None
     body = format_alert_body(event)
-    assert "Demo Equity crossed a configured threshold" in body
+    assert "Instrument: Demo Equity (FAKE)" in body
     assert "Current: 115.00 USD" in body
     assert "Reference: 100.00 USD" in body
     assert "Change: +15.00%" in body
-    assert "Threshold: 10.00%" in body
-    assert "Rule: PRICE_REFERENCE_CHANGE" in body
-    assert "not a trading instruction" in body
+    assert "Source: INTRADAY" in body
+    assert "Requires review according to the IOS" in body
+    assert "buy" not in body.lower()
+    assert "sell" not in body.lower()
     assert NOW.isoformat() in body

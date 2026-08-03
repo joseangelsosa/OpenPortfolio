@@ -120,6 +120,38 @@ def test_higher_severity_is_delivered_again(tmp_path: Path) -> None:
     assert len(output) == 2
 
 
+def test_return_below_threshold_rearms_a_future_review(tmp_path: Path) -> None:
+    configuration = load_portfolio(EXAMPLE)
+    store = JsonAlertStateStore(tmp_path / "alert_state.json")
+    output: list[str] = []
+    notifier = ConsoleNotifier(output.append)
+
+    run_portfolio_review(
+        configuration,
+        FakeMarketDataProvider(configuration.fake_prices),
+        notifier,
+        state_store=store,
+    )
+    below = dict(configuration.fake_prices)
+    below["FAKE-USD-STOCK"] = Decimal("110")
+    reset = run_portfolio_review(
+        configuration,
+        FakeMarketDataProvider(below),
+        notifier,
+        state_store=store,
+    )
+    crossed_again = run_portfolio_review(
+        configuration,
+        FakeMarketDataProvider(configuration.fake_prices),
+        notifier,
+        state_store=store,
+    )
+
+    assert not reset.alerts
+    assert crossed_again.notifications_sent == 1
+    assert len(output) == 2
+
+
 def test_notification_failure_is_not_recorded(tmp_path: Path) -> None:
     configuration = load_portfolio(EXAMPLE)
     store = JsonAlertStateStore(tmp_path / "alert_state.json")

@@ -45,19 +45,33 @@ instruments:
 
 positions: []
 
-# Para activar una regla hay que decidir y añadir reference_price,
-# review_change_percent y high_change_percent, y cambiar enabled a true.
+# Referencias fijas de la última comprobación intradía validada.
 review_rules:
   - instrument_id: sp500-etf
-    enabled: false
+    enabled: true
+    reference_price: "66.42"
+    review_change_percent: "5"
+    high_change_percent: "10"
   - instrument_id: nvidia
-    enabled: false
+    enabled: true
+    reference_price: "204.38"
+    review_change_percent: "5"
+    high_change_percent: "10"
   - instrument_id: alphabet
-    enabled: false
+    enabled: true
+    reference_price: "368.28"
+    review_change_percent: "5"
+    high_change_percent: "10"
   - instrument_id: microsoft
-    enabled: false
+    enabled: true
+    reference_price: "486.36"
+    review_change_percent: "5"
+    high_change_percent: "10"
   - instrument_id: nestle
-    enabled: false
+    enabled: true
+    reference_price: "87.09"
+    review_change_percent: "5"
+    high_change_percent: "10"
 
 fake_market_data: {}
 fake_market_data_sources: {}

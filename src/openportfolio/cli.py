@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 import sys
 from typing import Mapping, Sequence
 
-from openportfolio.alerts import ConsoleNotifier, NotificationConfigurationError, NtfyNotifier
+from openportfolio.alerts import (
+    ConsoleNotifier,
+    NotificationConfigurationError,
+    NotificationDeliveryError,
+    NtfyNotifier,
+)
 from openportfolio.application import (
     QuoteCheckItem,
     check_portfolio_quotes,
     run_portfolio_review,
 )
-from openportfolio.domain import MarketQuote, Portfolio, QuoteSource
+from openportfolio.domain import Alert, MarketQuote, Portfolio, QuoteSource, Severity
 from openportfolio.market_data import MarketDataError, MarketDataProvider
 from openportfolio.persistence import (
     DEFAULT_ALERT_STATE_PATH,
@@ -31,6 +37,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv) if argv is not None else sys.argv[1:]
     if arguments and arguments[0] == "review":
         return _review_main(arguments[1:])
+    if arguments and arguments[0] == "send-test-notification":
+        return _test_notification_main(arguments[1:])
     return _valuation_main(arguments)
 
 
@@ -130,13 +138,6 @@ def _review_main(argv: Sequence[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    if args.provider == "yfinance" and not args.dry_run:
-        print(
-            "Error de configuración: yfinance requiere --dry-run en este incremento",
-            file=sys.stderr,
-        )
-        return 2
-
     try:
         configuration = load_portfolio(args.portfolio)
         provider = _provider(
@@ -180,6 +181,37 @@ def _review_main(argv: Sequence[str]) -> int:
         return 3
     if result.is_partial:
         return 1
+    return 0
+
+
+def _test_notification_main(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="openportfolio send-test-notification",
+        description="Envía una única notificación de prueba sin datos ni estado reales",
+    )
+    parser.parse_args(argv)
+    try:
+        notifier = NtfyNotifier()
+        notifier.send(
+            Alert(
+                id="test-notification",
+                event_id="test-notification-event",
+                severity=Severity.INFO,
+                title="PRUEBA OpenPortfolio",
+                body=(
+                    "PRUEBA OpenPortfolio — canal de notificaciones configurado "
+                    "correctamente. No corresponde a una revisión real de mercado."
+                ),
+                created_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+            )
+        )
+    except NotificationConfigurationError as error:
+        print(f"Error de configuración: {error}", file=sys.stderr)
+        return 2
+    except NotificationDeliveryError as error:
+        print(f"Error de notificación: {error}", file=sys.stderr)
+        return 3
+    print("Notificación de PRUEBA enviada.")
     return 0
 
 

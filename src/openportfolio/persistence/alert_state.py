@@ -51,6 +51,15 @@ class AlertState:
         )
         return AlertState(delivered_alerts=delivered)
 
+    def without(self, alert_ids: set[str]) -> AlertState:
+        return AlertState(
+            delivered_alerts={
+                alert_id: record
+                for alert_id, record in self.delivered_alerts.items()
+                if alert_id not in alert_ids
+            }
+        )
+
 
 class AlertStateStore(Protocol):
     def load(self) -> AlertState:

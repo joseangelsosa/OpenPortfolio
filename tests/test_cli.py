@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from openportfolio.cli import main
+from openportfolio.domain import Alert
 
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "demo_portfolio.yaml"
@@ -44,15 +45,42 @@ def test_review_cli_reports_generated_sent_and_suppressed(
     assert "1 alertas generadas, 0 enviadas, 1 suprimidas" in second
 
 
-def test_yfinance_review_requires_dry_run(
+def test_real_ntfy_review_fails_safely_without_topic(
     monkeypatch: pytest.MonkeyPatch, capsys: object
 ) -> None:
-    def forbidden_provider(*args: object, **kwargs: object) -> object:
-        raise AssertionError("el proveedor no debe construirse sin dry-run")
-
-    monkeypatch.setattr("openportfolio.cli._provider", forbidden_provider)
-    result = main(["review", "--provider", "yfinance"])
+    monkeypatch.delenv("OPENPORTFOLIO_NTFY_TOPIC", raising=False)
+    result = main(["review", "--provider", "fake", "--notifier", "ntfy"])
     error = capsys.readouterr().err  # type: ignore[attr-defined]
 
     assert result == 2
-    assert "yfinance requiere --dry-run" in error
+    assert "OPENPORTFOLIO_NTFY_TOPIC" in error
+
+
+def test_send_test_notification_sends_exactly_one_fake_without_real_dependencies(
+    monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    sent: list[Alert] = []
+
+    class CapturingNotifier:
+        def send(self, alert: Alert) -> None:
+            sent.append(alert)
+
+    monkeypatch.setattr("openportfolio.cli.NtfyNotifier", CapturingNotifier)
+    monkeypatch.setattr(
+        "openportfolio.cli.load_portfolio",
+        lambda *args, **kwargs: pytest.fail("no debe cargar cartera"),
+    )
+    monkeypatch.setattr(
+        "openportfolio.cli._provider",
+        lambda *args, **kwargs: pytest.fail("no debe construir yfinance ni fake"),
+    )
+    monkeypatch.setattr(
+        "openportfolio.cli.JsonAlertStateStore",
+        lambda *args, **kwargs: pytest.fail("no debe usar estado"),
+    )
+
+    assert main(["send-test-notification"]) == 0
+    assert len(sent) == 1
+    assert sent[0].title == "PRUEBA OpenPortfolio"
+    assert "No corresponde a una revisión real de mercado" in sent[0].body
+    assert "PRUEBA" in capsys.readouterr().out  # type: ignore[attr-defined]

@@ -66,6 +66,8 @@ class AnalysisEvent:
     change_percent: Decimal
     threshold_percent: Decimal
     occurred_at: datetime
+    provider_symbol: str | None = None
+    source: QuoteSource | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", _required_text(self.id, "analysis_event.id"))
@@ -111,6 +113,14 @@ class AnalysisEvent:
         if self.current_price <= 0 or self.reference_price <= 0 or self.threshold_percent <= 0:
             raise ValueError("precios y umbral del evento deben ser mayores que cero")
         _aware(self.occurred_at, "analysis_event.occurred_at")
+        if self.provider_symbol is not None:
+            object.__setattr__(
+                self,
+                "provider_symbol",
+                _required_text(self.provider_symbol, "analysis_event.provider_symbol"),
+            )
+        if self.source is not None and not isinstance(self.source, QuoteSource):
+            raise TypeError("analysis_event.source debe ser QuoteSource")
 
     @classmethod
     def create(
@@ -129,6 +139,8 @@ class AnalysisEvent:
         change_percent: Decimal,
         threshold_percent: Decimal,
         occurred_at: datetime,
+        provider_symbol: str | None = None,
+        source: QuoteSource | None = None,
     ) -> AnalysisEvent:
         identifier = _stable_identifier(
             "event",
@@ -159,6 +171,8 @@ class AnalysisEvent:
             change_percent=change_percent,
             threshold_percent=threshold_percent,
             occurred_at=occurred_at,
+            provider_symbol=provider_symbol,
+            source=source,
         )
 
 
@@ -182,13 +196,37 @@ class Alert:
 
     @classmethod
     def from_event(cls, event: AnalysisEvent, *, body: str) -> Alert:
+        if event.instrument_id is None:
+            raise ValueError("el evento de alerta debe identificar un instrumento")
+        direction = "up" if event.change_percent >= 0 else "down"
         return cls(
-            id=_stable_identifier("alert", {"event_id": event.id}),
+            id=cls.condition_id(
+                portfolio_id=event.portfolio_id,
+                rule_code=event.rule_code,
+                instrument_id=event.instrument_id,
+                direction=direction,
+            ),
             event_id=event.id,
             severity=event.severity,
             title=f"OpenPortfolio · {event.severity.value}",
             body=body,
             created_at=event.occurred_at,
+        )
+
+    @staticmethod
+    def condition_id(
+        *, portfolio_id: str, rule_code: str, instrument_id: str, direction: str
+    ) -> str:
+        if direction not in {"up", "down"}:
+            raise ValueError("direction debe ser up o down")
+        return _stable_identifier(
+            "alert-condition",
+            {
+                "portfolio_id": portfolio_id,
+                "rule_code": rule_code,
+                "instrument_id": instrument_id,
+                "direction": direction,
+            },
         )
 
 

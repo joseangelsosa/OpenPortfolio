@@ -50,13 +50,13 @@ El ejemplo incluido es completamente ficticio. Sus precios y umbrales están pre
 .venv/bin/openportfolio review --provider fake --notifier console
 ```
 
-En la demo, cada posición configura en YAML `reference_price`, `review_change_percent` y `high_change_percent`. Una alerta solo inicia una revisión humana: no es una recomendación ni una instrucción de compra o venta.
+En la demo, cada posición configura en YAML `reference_price`, `review_change_percent` y `high_change_percent`. `reference_price` es el precio fijo contra el que se calcula `((precio actual - referencia) / referencia) * 100`; no se reajusta automáticamente en esta v1. Una alerta solo inicia una revisión humana conforme al IOS: no constituye asesoramiento financiero ni una recomendación o instrucción de compra, venta o mantenimiento.
 
-La configuración operativa separa las reglas de las posiciones mediante `review_rules`. Sus cinco entradas están desactivadas para no inventar decisiones de inversión. Para cada instrumento hay que decidir `reference_price`, `review_change_percent` y `high_change_percent`, escribirlos como texto decimal y cambiar `enabled` a `true`. El umbral alto debe ser mayor que el de revisión.
+La configuración operativa separa las reglas de las posiciones mediante `review_rules`. Los cinco instrumentos tienen una referencia inicial fija y reglas activas: una variación absoluta desde el 5 % (inclusive) y menor del 10 % produce `REVIEW`; desde el 10 % (inclusive) produce `HIGH`. Se detectan tanto subidas como caídas y el mensaje conserva el signo.
 
 La revisión conserva por defecto el estado de entregas en `state/alert_state.json`. El archivo JSON tiene una versión de esquema y un mapa `delivered_alerts`; cada entrada contiene únicamente el ID determinista de alerta, el ID del evento y la severidad entregada. No contiene configuración de ntfy, topics ni secretos. La ruta puede cambiarse con `--state-path`.
 
-Después de que cualquier `Notifier` confirme una entrega, el estado se reemplaza de forma atómica. Una ejecución posterior suprime una alerta con el mismo ID ya entregado. Un escalado de `REVIEW` a `HIGH` produce una identidad determinista diferente y vuelve a notificarse. Los fallos de entrega y las ejecuciones `--dry-run` no modifican el estado. Por ahora no existen recordatorios periódicos, detección de recuperación ni rearme de condiciones.
+Después de que cualquier `Notifier` confirme una entrega, el estado se reemplaza de forma atómica. Una ejecución posterior suprime la misma condición por instrumento y dirección; un escalado de `REVIEW` a `HIGH` vuelve a notificarse. Al regresar por debajo del 5 % la condición se rearma para permitir una alerta en un cruce futuro. Los fallos de entrega y las ejecuciones `--dry-run` no registran una entrega.
 
 Si el archivo todavía no existe, la ejecución se considera la primera y se crea el directorio al registrar la primera entrega. Si está corrupto o usa una versión desconocida, la aplicación termina con un error explícito y conserva el archivo anterior. El estado local es generado y está excluido de Git.
 
@@ -83,13 +83,15 @@ export OPENPORTFOLIO_NTFY_TOPIC='<topic-secreto-configurado-localmente>'
 
 ### Ejecución manual en GitHub Actions
 
-Abre **Actions → Portfolio review → Run workflow** y selecciona:
+Abre **Actions → Portfolio review → Run workflow** y selecciona una operación:
 
-- `operation`: `review` mantiene el flujo existente; `check-real-quotes` ejecuta la comprobación real de los cinco símbolos con yfinance.
-- `provider`: `fake` es la opción segura predeterminada; `yfinance` usa `examples/operational_review.yaml` y consulta datos reales.
-- `dry_run`: está activado por defecto. Para `yfinance` es obligatorio y el workflow rechaza explícitamente cualquier otra combinación.
+- `fake`: revisión determinista offline con datos ficticios.
+- `dry-run`: previsualización ficticia sin notificación ni cambios de estado.
+- `check-real-quotes`: consulta yfinance, pero queda aislada de reglas, estado, notifier y secretos.
+- `send-test-notification`: envía exactamente el mensaje marcado como `PRUEBA`, sin yfinance, cartera operativa ni estado real.
+- `review-and-notify`: consulta yfinance, ejecuta las cinco reglas operativas, restaura y guarda `alert_state.json` y envía las alertas aplicables por ntfy.
 
-El workflow ejecuta los tests y muestra el resultado por consola. Para ejecutar la estrategia intradía con respaldo diario, selecciona `operation: check-real-quotes` (los otros inputs no alteran esta operación). Esta opción fuerza yfinance y `--check-quotes`, omite por completo los pasos de restauración y guardado de estado, no construye ni contacta ntfy, no permite notificaciones y no requiere secretos. No hay ningún `schedule`. Las opciones `provider` y `dry_run` continúan aplicándose sin cambios a `operation: review`; una revisión dry-run no guarda ni modifica `state/alert_state.json`.
+Los dos envíos ntfy requieren crear el GitHub Actions secret `OPENPORTFOLIO_NTFY_TOPIC`; el workflow no imprime su valor y falla de forma explícita si falta. `review-and-notify` es exclusivamente manual. `check-real-quotes` no construye ni contacta ntfy y no requiere secretos. Todavía no existe ningún `schedule`.
 
 GitHub Actions cache es la solución inicial de persistencia de la v1, no almacenamiento permanente garantizado: GitHub puede desalojar cachés, aplica límites de retención y una caché ausente hace que la siguiente ejecución se comporte como una primera ejecución. Por ello reduce duplicados entre runners, pero no ofrece las garantías de una base de datos.
 

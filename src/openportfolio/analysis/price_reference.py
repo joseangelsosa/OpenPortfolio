@@ -75,4 +75,6 @@ class PriceReferenceChangeRule:
             change_percent=change_percent,
             threshold_percent=crossed_threshold,
             occurred_at=quote.observed_at,
+            provider_symbol=quote.provider_symbol,
+            source=quote.source,
         )

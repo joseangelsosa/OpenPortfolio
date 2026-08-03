@@ -5,7 +5,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from openportfolio.alerts import Notifier, alerts_from_events
-from openportfolio.analysis import PriceReferenceChangeRule
+from openportfolio.analysis import PRICE_REFERENCE_CHANGE, PriceReferenceChangeRule
 from openportfolio.domain import Alert, AnalysisEvent, MarketQuote
 from openportfolio.market_data import MarketDataError, MarketDataProvider
 from openportfolio.persistence import AlertState, AlertStateStore, PortfolioConfiguration
@@ -42,6 +42,7 @@ def run_portfolio_review(
     quotes: dict[str, MarketQuote] = {}
     quote_errors: dict[str, str] = {}
     events: list[AnalysisEvent] = []
+    evaluated_condition_ids: set[str] = set()
     rule = PriceReferenceChangeRule()
 
     for instrument in configuration.portfolio.instruments:
@@ -61,6 +62,15 @@ def run_portfolio_review(
         thresholds = configuration.price_reference_rules.get(instrument.id)
         if thresholds is None:
             continue
+        evaluated_condition_ids.update(
+            Alert.condition_id(
+                portfolio_id=configuration.portfolio.id,
+                rule_code=PRICE_REFERENCE_CHANGE,
+                instrument_id=instrument.id,
+                direction=direction,
+            )
+            for direction in ("up", "down")
+        )
         event = rule.evaluate(
             portfolio_id=configuration.portfolio.id,
             instrument=instrument,
@@ -71,6 +81,8 @@ def run_portfolio_review(
             events.append(event)
 
     alerts = alerts_from_events(events)
+    active_condition_ids = {alert.id for alert in alerts}
+    state = state.without(evaluated_condition_ids - active_condition_ids)
     delivered_alerts: list[Alert] = []
     suppressed_alerts: list[Alert] = []
     notification_errors: list[str] = []
@@ -86,9 +98,10 @@ def run_portfolio_review(
         if dry_run:
             continue
         delivered_alerts.append(alert)
-        if state_store is not None:
-            state = state.with_delivered(alert)
-            state_store.save(state)
+        state = state.with_delivered(alert)
+
+    if state_store is not None and not dry_run:
+        state_store.save(state)
 
     return ReviewResult(
         quotes=MappingProxyType(quotes),

@@ -20,17 +20,19 @@ def _percent(value: Decimal, *, signed: bool = False) -> str:
 
 def format_alert_body(event: AnalysisEvent) -> str:
     currency = event.currency or ""
+    instrument = event.instrument_name or event.instrument_id or "Instrument"
+    symbol = event.provider_symbol or "unknown"
+    source = event.source.value if event.source is not None else "unknown"
     return "\n".join(
         (
-            event.title,
+            f"Instrument: {instrument} ({symbol})",
             f"Current: {_money(event.current_price)} {currency}".rstrip(),
             f"Reference: {_money(event.reference_price)} {currency}".rstrip(),
             f"Change: {_percent(event.change_percent, signed=True)}",
-            f"Threshold: {_percent(event.threshold_percent)}",
-            f"Rule: {event.rule_code}",
+            f"Source: {source}",
+            f"Market timestamp: {event.occurred_at.isoformat()}",
             "",
-            "Review trigger only — not a trading instruction.",
-            f"Timestamp: {event.occurred_at.isoformat()}",
+            "Requires review according to the IOS; this is not financial advice.",
         )
     )
 

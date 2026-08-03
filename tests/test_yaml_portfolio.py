@@ -80,12 +80,29 @@ fake_market_data: {FAKE: '10.00'}
     assert configuration.price_reference_rules == {}
 
 
-def test_operational_review_has_no_positions_or_enabled_investment_rules() -> None:
+def test_operational_review_has_no_positions_and_five_enabled_review_rules() -> None:
     configuration = load_portfolio(OPERATIONAL)
     portfolio = configuration.portfolio
 
     assert portfolio.positions == ()
-    assert configuration.price_reference_rules == {}
+    assert set(configuration.price_reference_rules) == {
+        "sp500-etf", "nvidia", "alphabet", "microsoft", "nestle"
+    }
+    assert {
+        instrument_id: thresholds.reference_price
+        for instrument_id, thresholds in configuration.price_reference_rules.items()
+    } == {
+        "sp500-etf": Decimal("66.42"),
+        "nvidia": Decimal("204.38"),
+        "alphabet": Decimal("368.28"),
+        "microsoft": Decimal("486.36"),
+        "nestle": Decimal("87.09"),
+    }
+    assert all(
+        thresholds.review_change_percent == Decimal("5")
+        and thresholds.high_change_percent == Decimal("10")
+        for thresholds in configuration.price_reference_rules.values()
+    )
     assert configuration.fake_prices == {}
     assert configuration.fake_quote_sources == {}
     assert {instrument.id for instrument in portfolio.instruments} == {
