@@ -1,0 +1,50 @@
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Bytecode y cachés de Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Variables de entorno y credenciales locales
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.json
+
+# Artefactos de distribución
+build/
+dist/
+*.egg-info/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# VS Code: ignorar ajustes locales, permitir configuración compartida
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.code-workspace
+
+# Archivos temporales y logs
+*.log
+*.tmp
+*.swp
+*~
+
