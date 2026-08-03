@@ -105,6 +105,13 @@ def _review_main(argv: Sequence[str]) -> int:
     )
     args = parser.parse_args(argv)
 
+    if args.provider == "yfinance" and not args.dry_run:
+        print(
+            "Error de configuración: yfinance requiere --dry-run en este incremento",
+            file=sys.stderr,
+        )
+        return 2
+
     try:
         configuration = load_portfolio(args.portfolio)
         provider = _provider(args.provider, configuration.fake_prices)

@@ -165,3 +165,38 @@ def test_dry_run_does_not_record_delivery(tmp_path: Path) -> None:
     assert preview.notifications_sent == 0
     assert actual.notifications_sent == 1
     assert len(output) == 2
+
+
+def test_review_rule_can_run_without_a_position(tmp_path: Path) -> None:
+    path = tmp_path / "watchlist.yaml"
+    path.write_text(
+        """
+portfolio: {id: watchlist, name: Watchlist, base_currency: USD}
+instruments:
+  - id: asset
+    name: Asset
+    asset_type: STOCK
+    currency: USD
+    provider_symbols: {fake: FAKE-ASSET}
+positions: []
+review_rules:
+  - instrument_id: asset
+    reference_price: '100'
+    review_change_percent: '10'
+    high_change_percent: '20'
+fake_market_data: {FAKE-ASSET: '115'}
+""",
+        encoding="utf-8",
+    )
+    configuration = load_portfolio(path)
+
+    result = run_portfolio_review(
+        configuration,
+        FakeMarketDataProvider(configuration.fake_prices),
+        ConsoleNotifier(lambda _: None),
+        dry_run=True,
+    )
+
+    assert len(result.quotes) == 1
+    assert len(result.alerts) == 1
+    assert result.alerts[0].severity.value == "REVIEW"

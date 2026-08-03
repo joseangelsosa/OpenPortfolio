@@ -10,6 +10,7 @@ from openportfolio.persistence.yaml_portfolio import (
 
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "demo_portfolio.yaml"
+OPERATIONAL = Path(__file__).parents[1] / "examples" / "operational_review.yaml"
 
 
 def test_loads_fictitious_yaml_portfolio() -> None:
@@ -72,3 +73,24 @@ fake_market_data: {FAKE: '10.00'}
     )
     configuration = load_portfolio(path)
     assert configuration.price_reference_rules == {}
+
+
+def test_operational_review_has_no_positions_or_enabled_investment_rules() -> None:
+    configuration = load_portfolio(OPERATIONAL)
+    portfolio = configuration.portfolio
+
+    assert portfolio.positions == ()
+    assert configuration.price_reference_rules == {}
+    assert configuration.fake_prices == {}
+    assert {instrument.id for instrument in portfolio.instruments} == {
+        "sp500-etf",
+        "nvidia",
+        "alphabet",
+        "microsoft",
+        "nestle",
+    }
+    assert portfolio.instrument("nvidia").symbol_for("yfinance") == "NVDA"
+    assert portfolio.instrument("microsoft").symbol_for("yfinance") == "MSFT"
+    assert not portfolio.instrument("sp500-etf").active
+    assert not portfolio.instrument("alphabet").active
+    assert not portfolio.instrument("nestle").active

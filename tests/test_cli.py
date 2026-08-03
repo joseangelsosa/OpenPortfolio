@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from openportfolio.cli import main
 
 
@@ -40,3 +42,17 @@ def test_review_cli_reports_generated_sent_and_suppressed(
     assert main(arguments) == 0
     second = capsys.readouterr().out  # type: ignore[attr-defined]
     assert "1 alertas generadas, 0 enviadas, 1 suprimidas" in second
+
+
+def test_yfinance_review_requires_dry_run(
+    monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    def forbidden_provider(*args: object, **kwargs: object) -> object:
+        raise AssertionError("el proveedor no debe construirse sin dry-run")
+
+    monkeypatch.setattr("openportfolio.cli._provider", forbidden_provider)
+    result = main(["review", "--provider", "yfinance"])
+    error = capsys.readouterr().err  # type: ignore[attr-defined]
+
+    assert result == 2
+    assert "yfinance requiere --dry-run" in error

@@ -39,7 +39,7 @@ def load_portfolio(path: str | Path) -> PortfolioConfiguration:
             _instrument(item, index)
             for index, item in enumerate(_list(root.get("instruments"), "instruments"))
         )
-        positions_data = _list(root.get("positions"), "positions")
+        positions_data = _list(root.get("positions", []), "positions", allow_empty=True)
         positions = tuple(
             _position(item, index, portfolio_id)
             for index, item in enumerate(positions_data)
@@ -61,12 +61,38 @@ def load_portfolio(path: str | Path) -> PortfolioConfiguration:
         if any(price <= 0 for price in fake_prices.values()):
             raise PortfolioConfigurationError("los precios ficticios deben ser mayores que cero")
         price_reference_rules: dict[str, PriceReferenceThresholds] = {}
+        known_instrument_ids = {instrument.id for instrument in instruments}
         for index, (position, raw_position) in enumerate(
             zip(positions, positions_data, strict=True)
         ):
             thresholds = _price_reference_thresholds(raw_position, index)
             if thresholds is not None:
-                price_reference_rules[position.id] = thresholds
+                price_reference_rules[position.instrument_id] = thresholds
+        for index, raw_rule in enumerate(
+            _list(root.get("review_rules", []), "review_rules", allow_empty=True)
+        ):
+            data = _mapping(raw_rule, f"review_rules[{index}]")
+            instrument_id = _text(
+                data.get("instrument_id"), f"review_rules[{index}].instrument_id"
+            )
+            if instrument_id not in known_instrument_ids:
+                raise PortfolioConfigurationError(
+                    f"review_rules[{index}] referencia un instrumento desconocido"
+                )
+            enabled = data.get("enabled", True)
+            if not isinstance(enabled, bool):
+                raise PortfolioConfigurationError(
+                    f"review_rules[{index}].enabled debe ser booleano"
+                )
+            if not enabled:
+                continue
+            if instrument_id in price_reference_rules:
+                raise PortfolioConfigurationError(
+                    f"hay más de una regla para el instrumento {instrument_id!r}"
+                )
+            price_reference_rules[instrument_id] = _required_price_reference_thresholds(
+                data, f"review_rules[{index}]"
+            )
         return PortfolioConfiguration(
             portfolio=portfolio,
             fake_prices=MappingProxyType(fake_prices),
@@ -135,15 +161,36 @@ def _price_reference_thresholds(
     )
 
 
+def _required_price_reference_thresholds(
+    data: dict[Any, Any], field_name: str
+) -> PriceReferenceThresholds:
+    required = ("reference_price", "review_change_percent", "high_change_percent")
+    missing = [field for field in required if field not in data]
+    if missing:
+        raise PortfolioConfigurationError(
+            f"{field_name} debe configurar {', '.join(required)} cuando está activa"
+        )
+    return PriceReferenceThresholds(
+        reference_price=_decimal(data["reference_price"], f"{field_name}.reference_price"),
+        review_change_percent=_decimal(
+            data["review_change_percent"], f"{field_name}.review_change_percent"
+        ),
+        high_change_percent=_decimal(
+            data["high_change_percent"], f"{field_name}.high_change_percent"
+        ),
+    )
+
+
 def _mapping(value: Any, field_name: str) -> dict[Any, Any]:
     if not isinstance(value, dict):
         raise PortfolioConfigurationError(f"{field_name} debe ser un mapa")
     return value
 
 
-def _list(value: Any, field_name: str) -> list[Any]:
-    if not isinstance(value, list) or not value:
-        raise PortfolioConfigurationError(f"{field_name} debe ser una lista no vacía")
+def _list(value: Any, field_name: str, *, allow_empty: bool = False) -> list[Any]:
+    if not isinstance(value, list) or (not value and not allow_empty):
+        requirement = "una lista" if allow_empty else "una lista no vacía"
+        raise PortfolioConfigurationError(f"{field_name} debe ser {requirement}")
     return value
 
 

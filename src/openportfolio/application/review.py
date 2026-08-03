@@ -44,8 +44,7 @@ def run_portfolio_review(
     events: list[AnalysisEvent] = []
     rule = PriceReferenceChangeRule()
 
-    for position in configuration.portfolio.positions:
-        instrument = configuration.portfolio.instrument(position.instrument_id)
+    for instrument in configuration.portfolio.instruments:
         if not instrument.active:
             continue
         try:
@@ -54,7 +53,7 @@ def run_portfolio_review(
             quote_errors[instrument.id] = str(error)
             continue
         quotes[instrument.id] = quote
-        thresholds = configuration.price_reference_rules.get(position.id)
+        thresholds = configuration.price_reference_rules.get(instrument.id)
         if thresholds is None:
             continue
         event = rule.evaluate(

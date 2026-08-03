@@ -2,6 +2,20 @@ name: Portfolio review
 
 on:
   workflow_dispatch:
+    inputs:
+      provider:
+        description: Market-data provider
+        required: true
+        type: choice
+        default: fake
+        options:
+          - fake
+          - yfinance
+      dry_run:
+        description: Preview without notifications or state changes
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -30,9 +44,6 @@ jobs:
       - name: Run test suite
         run: python -m pytest
 
-      - name: Run offline portfolio review
-        run: openportfolio review --provider fake --notifier console --dry-run
-
       - name: Restore alert delivery state
         uses: actions/cache/restore@v4
         with:
@@ -41,15 +52,28 @@ jobs:
           restore-keys: |
             alert-state-${{ runner.os }}-
 
-      - name: Send ntfy review alerts
+      - name: Validate operational safety
+        if: inputs.provider == 'yfinance' && !inputs.dry_run
+        run: |
+          echo 'yfinance is restricted to dry-run in this increment.' >&2
+          exit 2
+
+      - name: Run portfolio review
         id: operational-review
-        env:
-          OPENPORTFOLIO_NTFY_SERVER: ${{ secrets.OPENPORTFOLIO_NTFY_SERVER }}
-          OPENPORTFOLIO_NTFY_TOPIC: ${{ secrets.OPENPORTFOLIO_NTFY_TOPIC }}
-        run: openportfolio review --provider fake --notifier ntfy
+        shell: bash
+        run: |
+          portfolio='examples/demo_portfolio.yaml'
+          if [[ '${{ inputs.provider }}' == 'yfinance' ]]; then
+            portfolio='examples/operational_review.yaml'
+          fi
+          arguments=(review --portfolio "$portfolio" --provider '${{ inputs.provider }}' --notifier console)
+          if [[ '${{ inputs.dry_run }}' == 'true' ]]; then
+            arguments+=(--dry-run)
+          fi
+          openportfolio "${arguments[@]}"
 
       - name: Save updated alert delivery state
-        if: always() && hashFiles('state/alert_state.json') != ''
+        if: always() && steps.operational-review.outcome == 'success' && !inputs.dry_run && hashFiles('state/alert_state.json') != ''
         uses: actions/cache/save@v4
         with:
           path: state/alert_state.json

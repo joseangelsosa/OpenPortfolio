@@ -28,11 +28,17 @@ También se puede indicar la configuración y el proveedor explícitamente:
 .venv/bin/openportfolio --portfolio examples/demo_portfolio.yaml --provider fake
 ```
 
-La consulta real es opcional, requiere red y puede fallar de forma explícita si el proveedor no encuentra un símbolo, devuelve datos vacíos o no está disponible:
+La primera configuración operativa no contiene posiciones, cantidades, precios de compra ni datos personales. NVDA y MSFT están activos; el ETF S&P 500, Alphabet y Nestlé permanecen inactivos porque sus símbolos exactos no aparecen documentados en el repositorio. Para consultar los precios activos y ejecutar la revisión real obligatoriamente en modo no notificable:
 
 ```bash
-.venv/bin/openportfolio --portfolio examples/demo_portfolio.yaml --provider yfinance
+.venv/bin/openportfolio review \
+  --portfolio examples/operational_review.yaml \
+  --provider yfinance \
+  --notifier console \
+  --dry-run
 ```
+
+El adaptador usa el último cierre diario utilizable de los últimos cinco días. yfinance es un servicio externo no contractual: requiere red, puede sufrir límites o cambios de API, tener retrasos, devolver moneda o timestamps incompletos y no garantiza disponibilidad ni calidad para todos los símbolos. OpenPortfolio trata esas situaciones como errores explícitos del instrumento; no sustituye precios ausentes por cero. No hay reintentos complejos en este incremento.
 
 ## Revisión y alertas
 
@@ -42,7 +48,9 @@ El ejemplo incluido es completamente ficticio. Sus precios y umbrales están pre
 .venv/bin/openportfolio review --provider fake --notifier console
 ```
 
-Cada posición configura en YAML `reference_price`, `review_change_percent` y `high_change_percent`. Una alerta solo inicia una revisión humana: no es una recomendación ni una instrucción de compra o venta.
+En la demo, cada posición configura en YAML `reference_price`, `review_change_percent` y `high_change_percent`. Una alerta solo inicia una revisión humana: no es una recomendación ni una instrucción de compra o venta.
+
+La configuración operativa separa las reglas de las posiciones mediante `review_rules`. Sus cinco entradas están desactivadas para no inventar decisiones de inversión. Para cada instrumento hay que decidir `reference_price`, `review_change_percent` y `high_change_percent`, escribirlos como texto decimal y cambiar `enabled` a `true`. El umbral alto debe ser mayor que el de revisión.
 
 La revisión conserva por defecto el estado de entregas en `state/alert_state.json`. El archivo JSON tiene una versión de esquema y un mapa `delivered_alerts`; cada entrada contiene únicamente el ID determinista de alerta, el ID del evento y la severidad entregada. No contiene configuración de ntfy, topics ni secretos. La ruta puede cambiarse con `--state-path`.
 
@@ -73,14 +81,14 @@ export OPENPORTFOLIO_NTFY_TOPIC='<topic-secreto-configurado-localmente>'
 
 ### Ejecución manual en GitHub Actions
 
-En GitHub, abre **Settings → Secrets and variables → Actions** y crea estos repository secrets:
+Abre **Actions → Portfolio review → Run workflow** y selecciona:
 
-- `OPENPORTFOLIO_NTFY_TOPIC`: el topic secreto elegido.
-- `OPENPORTFOLIO_NTFY_SERVER`: el servidor alternativo, si se necesita. Si no existe, el workflow usa `https://ntfy.sh`.
+- `provider`: `fake` es la opción segura predeterminada; `yfinance` usa `examples/operational_review.yaml` y consulta datos reales.
+- `dry_run`: está activado por defecto. Para `yfinance` es obligatorio y el workflow rechaza explícitamente cualquier otra combinación.
 
-Después abre **Actions → Portfolio review → Run workflow**. El workflow ejecuta primero todos los tests y una vista previa ficticia en consola. Antes de la revisión operativa restaura `state/alert_state.json` con GitHub Actions cache; después guarda el estado actualizado con una clave única por ejecución y usa `restore-keys` para recuperar la versión disponible más reciente. La ejecución continúa siendo manual y el proveedor operativo sigue siendo `fake`; no se realizan commits automáticos.
+El workflow ejecuta los tests, restaura el estado y muestra el resultado por consola. No construye ni contacta ntfy, no usa secretos y no tiene `schedule`. Una ejecución dry-run no guarda ni modifica `state/alert_state.json`; el paso de guardado solo puede ejecutarse tras una revisión fake no-dry-run completada. La ejecución yfinance actual consulta únicamente NVDA y MSFT hasta que se confirmen los otros tres símbolos y no aplica reglas hasta completar los valores pendientes.
 
-GitHub Actions cache es la solución inicial de persistencia de la v1, no almacenamiento permanente garantizado: GitHub puede desalojar cachés, aplica límites de retención y una caché ausente hace que la siguiente ejecución se comporte como una primera ejecución. Por ello reduce duplicados entre runners, pero no ofrece las garantías de una base de datos. Si falta el topic, el paso operativo falla con un error de configuración saneado.
+GitHub Actions cache es la solución inicial de persistencia de la v1, no almacenamiento permanente garantizado: GitHub puede desalojar cachés, aplica límites de retención y una caché ausente hace que la siguiente ejecución se comporte como una primera ejecución. Por ello reduce duplicados entre runners, pero no ofrece las garantías de una base de datos.
 
 ## Tests
 

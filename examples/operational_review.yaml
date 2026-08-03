@@ -1,0 +1,58 @@
+# Lista operativa sin posiciones, cantidades, precios de compra ni datos personales.
+# Los instrumentos sin símbolo documentado permanecen inactivos para no adivinarlo.
+portfolio:
+  id: operational-review
+  name: Primera revisión operativa
+  base_currency: EUR
+
+instruments:
+  - id: sp500-etf
+    name: S&P 500 ETF
+    asset_type: ETF
+    currency: USD
+    provider_symbols: {}
+    active: false # TODO: confirmar símbolo exacto y moneda de su mercado.
+  - id: nvidia
+    name: NVIDIA
+    asset_type: STOCK
+    currency: USD
+    provider_symbols:
+      yfinance: NVDA
+    active: true
+  - id: alphabet
+    name: Alphabet
+    asset_type: STOCK
+    currency: USD
+    provider_symbols: {}
+    active: false # TODO: confirmar clase y símbolo exactos.
+  - id: microsoft
+    name: Microsoft
+    asset_type: STOCK
+    currency: USD
+    provider_symbols:
+      yfinance: MSFT
+    active: true
+  - id: nestle
+    name: Nestlé
+    asset_type: STOCK
+    currency: CHF
+    provider_symbols: {}
+    active: false # TODO: confirmar símbolo europeo y moneda de cotización.
+
+positions: []
+
+# Para activar una regla hay que decidir y añadir reference_price,
+# review_change_percent y high_change_percent, y cambiar enabled a true.
+review_rules:
+  - instrument_id: sp500-etf
+    enabled: false
+  - instrument_id: nvidia
+    enabled: false
+  - instrument_id: alphabet
+    enabled: false
+  - instrument_id: microsoft
+    enabled: false
+  - instrument_id: nestle
+    enabled: false
+
+fake_market_data: {}

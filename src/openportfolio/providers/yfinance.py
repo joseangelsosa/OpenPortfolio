@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Callable
 
 import yfinance as yf
 
@@ -17,25 +17,37 @@ class YFinanceMarketDataProvider:
 
     name = "yfinance"
 
+    def __init__(
+        self,
+        *,
+        ticker_factory: Callable[[str], Any] = yf.Ticker,
+        now: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._ticker_factory = ticker_factory
+        self._now = now or (lambda: datetime.now(timezone.utc))
+
     def get_quote(self, instrument: Instrument) -> MarketQuote:
         symbol = instrument.symbol_for(self.name)
         if symbol is None:
             raise ProviderSymbolError(
                 f"el instrumento {instrument.id!r} no tiene símbolo para yfinance"
             )
-        retrieved_at = datetime.now(timezone.utc)
         try:
-            ticker = yf.Ticker(symbol)
+            ticker = self._ticker_factory(symbol)
             history = ticker.history(period="5d", interval="1d", auto_adjust=False)
         except Exception as error:
             raise ProviderResponseError(
-                f"yfinance falló al consultar {symbol!r}: {error}"
+                f"yfinance falló al consultar {symbol!r}"
             ) from error
-        if history is None or history.empty:
-            raise MarketDataNotFoundError(
-                f"yfinance no encontró cotizaciones para {symbol!r}"
-            )
         try:
+            if history is None or history.empty:
+                raise MarketDataNotFoundError(
+                    f"yfinance no encontró cotizaciones para {symbol!r}"
+                )
+            if "Close" not in history:
+                raise MarketDataNotFoundError(
+                    f"yfinance devolvió cotizaciones sin precio para {symbol!r}"
+                )
             usable_history = history.dropna(subset=["Close"])
             if usable_history.empty:
                 raise MarketDataNotFoundError(
@@ -45,30 +57,40 @@ class YFinanceMarketDataProvider:
             price = self._to_decimal(row["Close"], symbol)
             observed_at = self._to_datetime(row.name, symbol)
             reported_currency = self._currency(ticker, symbol)
+            retrieved_at = self._retrieved_at(symbol)
+            if observed_at > retrieved_at:
+                raise ProviderResponseError(
+                    f"yfinance devolvió un timestamp futuro para {symbol!r}"
+                )
         except MarketDataNotFoundError:
             raise
         except ProviderResponseError:
             raise
         except Exception as error:
             raise ProviderResponseError(
-                f"respuesta no utilizable de yfinance para {symbol!r}: {error}"
+                f"respuesta no utilizable de yfinance para {symbol!r}"
             ) from error
         if reported_currency != instrument.currency:
             raise ProviderResponseError(
                 f"yfinance informó {reported_currency} para {symbol!r}, "
                 f"pero el instrumento declara {instrument.currency}"
             )
-        return MarketQuote(
-            id=f"yfinance:{instrument.id}:{observed_at.isoformat()}",
-            instrument_id=instrument.id,
-            price=price,
-            currency=reported_currency,
-            observed_at=observed_at,
-            retrieved_at=retrieved_at,
-            provider=self.name,
-            provider_symbol=symbol,
-            kind="close",
-        )
+        try:
+            return MarketQuote(
+                id=f"yfinance:{instrument.id}:{observed_at.isoformat()}",
+                instrument_id=instrument.id,
+                price=price,
+                currency=reported_currency,
+                observed_at=observed_at,
+                retrieved_at=retrieved_at,
+                provider=self.name,
+                provider_symbol=symbol,
+                kind="close",
+            )
+        except (TypeError, ValueError) as error:
+            raise ProviderResponseError(
+                f"respuesta no utilizable de yfinance para {symbol!r}"
+            ) from error
 
     @staticmethod
     def _to_decimal(value: Any, symbol: str) -> Decimal:
@@ -93,8 +115,18 @@ class YFinanceMarketDataProvider:
                 f"yfinance devolvió un timestamp inválido para {symbol!r}"
             )
         if observed_at.tzinfo is None or observed_at.utcoffset() is None:
-            observed_at = observed_at.replace(tzinfo=timezone.utc)
+            raise ProviderResponseError(
+                f"yfinance devolvió un timestamp sin zona horaria para {symbol!r}"
+            )
         return observed_at.astimezone(timezone.utc)
+
+    def _retrieved_at(self, symbol: str) -> datetime:
+        value = self._now()
+        if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+            raise ProviderResponseError(
+                f"no se pudo fechar la consulta de yfinance para {symbol!r}"
+            )
+        return value.astimezone(timezone.utc)
 
     @staticmethod
     def _currency(ticker: Any, symbol: str) -> str:
@@ -102,7 +134,7 @@ class YFinanceMarketDataProvider:
             currency = ticker.fast_info.get("currency")
         except Exception as error:
             raise ProviderResponseError(
-                f"yfinance no pudo informar la moneda de {symbol!r}: {error}"
+                f"yfinance no pudo informar la moneda de {symbol!r}"
             ) from error
         if not isinstance(currency, str) or not currency.strip():
             raise ProviderResponseError(
