@@ -16,6 +16,11 @@ from openportfolio.application.portfolio_import import (
     import_revolut_exports,
     reconciliation_report,
 )
+from openportfolio.application.portfolio_summary import (
+    PortfolioSummary,
+    render_portfolio_summary_text,
+    summarize_portfolio,
+)
 
 __all__ = [
     "QuoteCheckItem",
@@ -31,4 +36,7 @@ __all__ = [
     "discover_revolut_exports",
     "import_revolut_exports",
     "reconciliation_report",
+    "PortfolioSummary",
+    "render_portfolio_summary_text",
+    "summarize_portfolio",
 ]

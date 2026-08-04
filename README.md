@@ -60,6 +60,31 @@ El mismo catálogo permite declarar excepciones sin falsificar movimientos hist�
 
 Los CSV y resultados reales son datos financieros privados. El repositorio ignora todos los CSV, `.openportfolio/`, snapshots e informes de conciliación con los patrones locales previstos. No se deben copiar exportaciones reales a ejemplos, fixtures ni commits. Las pruebas usan únicamente datos sintéticos mínimos. Importar un snapshot no modifica `examples/operational_review.yaml`, no crea reglas del 5 %/10 % y no supone que el coste medio sea una referencia de alerta de mercado.
 
+### Resumen del snapshot importado
+
+`portfolio-summary` carga un snapshot ya importado mediante el contrato de persistencia oficial y
+muestra una vista consolidada. No reconstruye la cartera desde los CSV, no consulta precios ni
+proporciona todavía valoración de mercado, conversión de divisas, rentabilidad o reglas del IOS.
+
+Ejemplo con una ruta y datos locales completamente ficticios:
+
+```bash
+openportfolio portfolio-summary \
+  --snapshot ../OpenPortfolio-data/snapshots/portfolio.yaml
+```
+
+La salida JSON estable puede consumirse más adelante desde otra interfaz:
+
+```bash
+openportfolio portfolio-summary \
+  --snapshot ../OpenPortfolio-data/snapshots/portfolio.yaml \
+  --format json
+```
+
+El resumen identifica explícitamente los campos que el snapshot actual no conserva, como las
+posiciones cerradas, las advertencias de importación y el coste acumulado. Todos los ejemplos y
+tests del repositorio usan exclusivamente instrumentos y cantidades ficticios.
+
 ## Instalación
 
 Requiere Python 3.13 y un entorno virtual. Para instalar el proyecto y las dependencias de desarrollo en el entorno existente:

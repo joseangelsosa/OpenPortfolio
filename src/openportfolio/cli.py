@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 from decimal import Decimal
+import json
 from pathlib import Path
 import sys
 from typing import Mapping, Sequence
@@ -22,7 +23,9 @@ from openportfolio.application import (
     discover_revolut_exports,
     import_revolut_exports,
     reconciliation_report,
+    render_portfolio_summary_text,
     run_portfolio_review,
+    summarize_portfolio,
 )
 from openportfolio.domain import Alert, MarketQuote, Portfolio, QuoteSource, Severity
 from openportfolio.market_data import MarketDataError, MarketDataProvider
@@ -33,6 +36,7 @@ from openportfolio.persistence import (
     PortfolioSnapshotError,
     atomic_write_text,
     load_portfolio,
+    load_portfolio_snapshot,
     save_portfolio_snapshot,
 )
 from openportfolio.persistence.yaml_portfolio import PortfolioConfigurationError
@@ -44,6 +48,8 @@ DEFAULT_PORTFOLIO = Path(__file__).resolve().parents[2] / "examples" / "demo_por
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv) if argv is not None else sys.argv[1:]
+    if arguments and arguments[0] == "portfolio-summary":
+        return _portfolio_summary_main(arguments[1:])
     if arguments and arguments[0] == "import-revolut-latest":
         return _import_revolut_latest_main(arguments[1:])
     if arguments and arguments[0] == "import-revolut":
@@ -53,6 +59,47 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments and arguments[0] == "send-test-notification":
         return _test_notification_main(arguments[1:])
     return _valuation_main(arguments)
+
+
+def _portfolio_summary_main(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="openportfolio portfolio-summary",
+        description="Resume un snapshot importado sin cotizaciones ni reglas del IOS",
+    )
+    parser.add_argument(
+        "--snapshot",
+        type=Path,
+        required=True,
+        help="ruta al snapshot de cartera importado",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="formato de salida (por defecto: text)",
+    )
+    args = parser.parse_args(argv)
+
+    if not _is_readable_file(args.snapshot):
+        print(
+            "Error de snapshot: el archivo no existe o no es legible.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        summary = summarize_portfolio(load_portfolio_snapshot(args.snapshot))
+    except PortfolioSnapshotError:
+        print(
+            "Error de snapshot: el archivo no tiene un formato compatible.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.format == "json":
+        print(json.dumps(summary.as_dict(), ensure_ascii=False, sort_keys=True))
+    else:
+        print(render_portfolio_summary_text(summary), end="")
+    return 0
 
 
 def _import_revolut_main(argv: Sequence[str]) -> int:
