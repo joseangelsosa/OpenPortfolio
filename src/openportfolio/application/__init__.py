@@ -27,6 +27,15 @@ from openportfolio.application.market_mapping_validation import (
     render_market_mapping_validation_text,
     validate_market_mapping,
 )
+from openportfolio.application.portfolio_valuation import (
+    CurrencyTotal,
+    PortfolioValuation,
+    ValuationError,
+    ValuationExclusion,
+    ValuedPosition,
+    render_portfolio_valuation_text,
+    value_portfolio,
+)
 
 __all__ = [
     "QuoteCheckItem",
@@ -49,4 +58,11 @@ __all__ = [
     "MarketMappingValidation",
     "render_market_mapping_validation_text",
     "validate_market_mapping",
+    "CurrencyTotal",
+    "PortfolioValuation",
+    "ValuationError",
+    "ValuationExclusion",
+    "ValuedPosition",
+    "render_portfolio_valuation_text",
+    "value_portfolio",
 ]

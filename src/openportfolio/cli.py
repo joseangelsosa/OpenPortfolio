@@ -24,10 +24,12 @@ from openportfolio.application import (
     import_revolut_exports,
     reconciliation_report,
     render_market_mapping_validation_text,
+    render_portfolio_valuation_text,
     render_portfolio_summary_text,
     run_portfolio_review,
     summarize_portfolio,
     validate_market_mapping,
+    value_portfolio,
 )
 from openportfolio.domain import Alert, MarketQuote, Portfolio, QuoteSource, Severity
 from openportfolio.market_data import MarketDataError, MarketDataProvider
@@ -56,6 +58,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _portfolio_summary_main(arguments[1:])
     if arguments and arguments[0] == "validate-market-mapping":
         return _validate_market_mapping_main(arguments[1:])
+    if arguments and arguments[0] == "value-portfolio":
+        return _value_portfolio_main(arguments[1:])
     if arguments and arguments[0] == "import-revolut-latest":
         return _import_revolut_latest_main(arguments[1:])
     if arguments and arguments[0] == "import-revolut":
@@ -181,6 +185,96 @@ def _print_market_mapping_error(output_format: str, code: str, message: str) -> 
         payload = {
             "validation_schema_version": 1,
             "error": {"code": code, "message": message},
+        }
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+    else:
+        print(message, file=sys.stderr)
+
+
+def _value_portfolio_main(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="openportfolio value-portfolio",
+        description="Valora un snapshot importado en sus monedas originales",
+    )
+    parser.add_argument(
+        "--snapshot",
+        type=Path,
+        required=True,
+        help="ruta al snapshot de cartera importado",
+    )
+    parser.add_argument(
+        "--mapping",
+        type=Path,
+        required=True,
+        help="ruta al YAML privado de correspondencias",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="formato de salida (por defecto: text)",
+    )
+    args = parser.parse_args(argv)
+
+    if not _is_readable_file(args.snapshot):
+        _print_portfolio_valuation_input_error(
+            args.format,
+            "snapshot_not_readable",
+            "Error de snapshot: el archivo no existe o no es legible.",
+        )
+        return 2
+    if not _is_readable_file(args.mapping):
+        _print_portfolio_valuation_input_error(
+            args.format,
+            "mapping_not_readable",
+            "Error de mapping: el archivo no existe o no es legible.",
+        )
+        return 2
+    try:
+        snapshot = load_portfolio_snapshot(args.snapshot)
+    except PortfolioSnapshotError:
+        _print_portfolio_valuation_input_error(
+            args.format,
+            "invalid_snapshot",
+            "Error de snapshot: el archivo no tiene un formato compatible.",
+        )
+        return 1
+    try:
+        mapping = load_market_mapping(args.mapping)
+    except MarketMappingError:
+        _print_portfolio_valuation_input_error(
+            args.format,
+            "invalid_mapping",
+            "Error de mapping: el archivo no tiene un formato compatible.",
+        )
+        return 1
+
+    valuation = value_portfolio(
+        snapshot,
+        mapping,
+        lambda name: _provider(name, {}, {}),
+    )
+    if args.format == "json":
+        print(json.dumps(valuation.as_dict(), ensure_ascii=False, sort_keys=True))
+    else:
+        print(render_portfolio_valuation_text(valuation), end="")
+    return 0 if valuation.ok else 1
+
+
+def _print_portfolio_valuation_input_error(
+    output_format: str, code: str, message: str
+) -> None:
+    if output_format == "json":
+        payload = {
+            "valuation_schema_version": 1,
+            "metadata": None,
+            "coverage": None,
+            "currency_totals": [],
+            "positions": [],
+            "exclusions": [],
+            "warnings": [],
+            "errors": [{"code": code, "instrument_id": None, "message": message}],
+            "unavailable_fields": ["metadata", "coverage"],
         }
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
     else:

@@ -122,6 +122,38 @@ devolver el proveedor para ese símbolo y permite detectar antes de una futura v
 correspondencia configurada con la moneda equivocada. Este incremento no valora la cartera ni
 convierte divisas.
 
+### Valoración actual del snapshot
+
+`value-portfolio` carga el snapshot y el mapping mediante sus contratos oficiales, valida primero
+que todas las posiciones estén resueltas o excluidas y consulta precios actuales para las entradas
+habilitadas. El resultado se escribe únicamente en stdout; los dos YAML permanecen privados y no se
+modifican.
+
+Ejemplo con rutas ficticias:
+
+```bash
+openportfolio value-portfolio \
+  --snapshot /datos/privados/snapshot-ficticio.yaml \
+  --mapping /datos/privados/mapping-ficticio.yaml
+```
+
+El formato predeterminado es `text`. Para obtener el contrato JSON versionado y con cantidades e
+importes representados como cadenas decimales:
+
+```bash
+openportfolio value-portfolio \
+  --snapshot /datos/privados/snapshot-ficticio.yaml \
+  --mapping /datos/privados/mapping-ficticio.yaml \
+  --format json
+```
+
+Cada posición se valora en su moneda original y los subtotales de EUR, USD u otras monedas se
+mantienen separados. No existe todavía conversión de EUR a USD ni un total global que mezcle
+monedas. Las exclusiones explícitas no generan consultas ni precios ficticios. Este comando tampoco
+reconstruye la cartera desde CSV, aplica recomendaciones o reglas del IOS, persiste informes ni
+envía notificaciones. Los ejemplos y tests contienen solo datos sintéticos; el snapshot y el mapping
+reales deben conservarse fuera del repositorio público.
+
 ## Instalación
 
 Requiere Python 3.13 y un entorno virtual. Para instalar el proyecto y las dependencias de desarrollo en el entorno existente:
