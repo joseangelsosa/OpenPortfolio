@@ -3,12 +3,19 @@ from __future__ import annotations
 import csv
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import os
 from pathlib import Path
 
 import pytest
 import yaml
 
-from openportfolio.application import combine_revolut_imports, reconciliation_report
+from openportfolio.application import (
+    RevolutDiscoveryError,
+    combine_revolut_imports,
+    discover_revolut_exports,
+    import_revolut_exports,
+    reconciliation_report,
+)
 from openportfolio.cli import main
 from openportfolio.domain import (
     CostBasisStatus,
@@ -477,6 +484,22 @@ def _cli_arguments(
     ]
 
 
+def _latest_cli_arguments(
+    input_directory: Path,
+    snapshot: Path,
+    report: Path,
+) -> list[str]:
+    return [
+        "import-revolut-latest",
+        "--input-directory",
+        str(input_directory),
+        "--snapshot-output",
+        str(snapshot),
+        "--report-output",
+        str(report),
+    ]
+
+
 def test_import_revolut_cli_succeeds_creates_outputs_and_prints_safe_summary(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -597,3 +620,247 @@ def test_import_cli_never_constructs_network_notifier_or_alert_state(
             tmp_path / "r.txt",
         )
     ) == 0
+
+
+def test_latest_cli_discovers_arbitrary_names_and_creates_outputs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    input_directory = tmp_path / "incoming"
+    input_directory.mkdir()
+    _investments(input_directory / "completely-arbitrary-01.csv", [_investment_row()])
+    _single_xau(input_directory / "unrelated-label-99.CSV")
+    snapshot = tmp_path / "generated" / "snapshot.yaml"
+    report = tmp_path / "generated" / "report.txt"
+
+    exit_code = main(_latest_cli_arguments(input_directory, snapshot, report))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert snapshot.is_file() and report.is_file()
+    assert load_portfolio_snapshot(snapshot).positions
+    assert "CSV examinados: 2" in captured.out
+    assert "Archivos ignorados: 0" in captured.out
+    assert "Selección: un candidato de cada tipo" in captured.out
+    assert "Conciliación: correcta" in captured.out
+    assert captured.err == ""
+
+
+def test_discovery_selects_newest_candidate_by_mtime(tmp_path: Path) -> None:
+    older = _investments(
+        tmp_path / "first.csv",
+        [_investment_row(ticker="OLDER")],
+    )
+    newest = _investments(
+        tmp_path / "second.csv",
+        [_investment_row(ticker="NEWEST")],
+    )
+    statement = _single_xau(tmp_path / "third.csv")
+    os.utime(older, ns=(1_000_000_000, 1_000_000_000))
+    os.utime(newest, ns=(2_000_000_000, 2_000_000_000))
+    os.utime(statement, ns=(1_500_000_000, 1_500_000_000))
+
+    selection = discover_revolut_exports(tmp_path)
+
+    assert selection.investment_history == newest
+    assert selection.account_statement == statement
+    assert selection.csv_examined == 3
+
+
+def test_discovery_rejects_exact_newest_mtime_tie_without_revealing_names(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    first = _investments(tmp_path / "private-one.csv", [_investment_row()])
+    second = _investments(tmp_path / "private-two.csv", [_investment_row()])
+    _single_xau(tmp_path / "statement.csv")
+    tied = 3_000_000_000
+    os.utime(first, ns=(tied, tied))
+    os.utime(second, ns=(tied, tied))
+
+    with pytest.raises(RevolutDiscoveryError) as raised:
+        discover_revolut_exports(tmp_path)
+
+    message = str(raised.value)
+    assert "mismo mtime" in message
+    assert "import-revolut" in message
+    assert first.name not in message and second.name not in message
+
+    exit_code = main(
+        _latest_cli_arguments(
+            tmp_path,
+            tmp_path / "snapshot.yaml",
+            tmp_path / "report.txt",
+        )
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "mismo mtime" in captured.err
+    assert first.name not in captured.out + captured.err
+    assert second.name not in captured.out + captured.err
+    assert not (tmp_path / "snapshot.yaml").exists()
+    assert not (tmp_path / "report.txt").exists()
+
+
+@pytest.mark.parametrize("kind", ("missing", "empty"))
+def test_latest_cli_rejects_missing_or_empty_directory_with_exit_two(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+) -> None:
+    input_directory = tmp_path / "confidential-directory"
+    if kind == "empty":
+        input_directory.mkdir()
+
+    exit_code = main(
+        _latest_cli_arguments(
+            input_directory,
+            tmp_path / "snapshot.yaml",
+            tmp_path / "report.txt",
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Error de descubrimiento" in captured.err
+    assert input_directory.name not in captured.out + captured.err
+
+
+def test_latest_cli_rejects_absent_export_type_and_sanitizes_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    secret_filename = "account-holder-987654.csv"
+    _investments(
+        tmp_path / secret_filename,
+        [_investment_row(ticker="PRIVATE-ASSET", total="USD 76543.21")],
+    )
+
+    exit_code = main(
+        _latest_cli_arguments(
+            tmp_path,
+            tmp_path / "snapshot.yaml",
+            tmp_path / "report.txt",
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "falta un CSV compatible" in captured.err
+    for private_detail in (secret_filename, "PRIVATE-ASSET", "76543.21"):
+        assert private_detail not in captured.out + captured.err
+
+
+def test_unknown_csv_is_ignored_alongside_valid_candidates(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _investments(tmp_path / "one.csv", [_investment_row()])
+    _single_xau(tmp_path / "two.csv")
+    unknown_name = "private-unknown-name.csv"
+    _write_csv(tmp_path / unknown_name, ("unexpected", "columns"), [["secret", "9999"]])
+
+    exit_code = main(
+        _latest_cli_arguments(
+            tmp_path,
+            tmp_path / "snapshot.yaml",
+            tmp_path / "report.txt",
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "CSV examinados: 3" in captured.out
+    assert "Archivos ignorados: 1" in captured.out
+    assert unknown_name not in captured.out + captured.err
+    assert "secret" not in captured.out + captured.err
+    assert "9999" not in captured.out + captured.err
+
+
+def test_discovery_reports_unreadable_csv_portably(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    investments = _investments(tmp_path / "unreadable-private.csv", [_investment_row()])
+    _single_xau(tmp_path / "statement.csv")
+    original_open = Path.open
+
+    def fail_selected_open(path: Path, *args: object, **kwargs: object) -> object:
+        if path == investments:
+            raise PermissionError("synthetic permission failure")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_selected_open)
+
+    with pytest.raises(RevolutDiscoveryError) as raised:
+        discover_revolut_exports(tmp_path)
+    assert "no es legible" in str(raised.value)
+    assert investments.name not in str(raised.value)
+
+
+def test_latest_cli_reuses_existing_import_flow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    investments = _investments(tmp_path / "one.csv", [_investment_row()])
+    statement = _single_xau(tmp_path / "two.csv")
+    calls: list[tuple[Path, Path]] = []
+
+    def capture_import(
+        investment_history: str | Path,
+        account_statement: str | Path,
+        *,
+        generated_at: datetime | None = None,
+    ):
+        calls.append((Path(investment_history), Path(account_statement)))
+        return import_revolut_exports(
+            investment_history,
+            account_statement,
+            generated_at=generated_at,
+        )
+
+    monkeypatch.setattr("openportfolio.cli.import_revolut_exports", capture_import)
+
+    assert main(
+        _latest_cli_arguments(
+            tmp_path,
+            tmp_path / "snapshot.yaml",
+            tmp_path / "report.txt",
+        )
+    ) == 0
+    assert calls == [(investments, statement)]
+
+
+def test_latest_cli_sanitizes_selected_file_content_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    private_name = "customer-reference-112233.csv"
+    _investments(
+        tmp_path / private_name,
+        [
+            _investment_row(
+                ticker="CONFIDENTIAL-ASSET",
+                kind="PRIVATE-OPERATION",
+                quantity="123.456",
+                total="USD 98765.43",
+            )
+        ],
+    )
+    _single_xau(tmp_path / "statement.csv")
+
+    exit_code = main(
+        _latest_cli_arguments(
+            tmp_path,
+            tmp_path / "snapshot.yaml",
+            tmp_path / "report.txt",
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "los datos no son válidos" in captured.err
+    for private_detail in (
+        private_name,
+        "CONFIDENTIAL-ASSET",
+        "PRIVATE-OPERATION",
+        "123.456",
+        "98765.43",
+    ):
+        assert private_detail not in captured.out + captured.err
+    assert not (tmp_path / "snapshot.yaml").exists()
+    assert not (tmp_path / "report.txt").exists()

@@ -8,8 +8,11 @@ from openportfolio.application.quote_check import (
 from openportfolio.application.review import ReviewResult, run_portfolio_review
 from openportfolio.application.portfolio_import import (
     PortfolioImportOutcome,
+    RevolutDiscoveryError,
+    RevolutExportSelection,
     RevolutImportError,
     combine_revolut_imports,
+    discover_revolut_exports,
     import_revolut_exports,
     reconciliation_report,
 )
@@ -21,8 +24,11 @@ __all__ = [
     "check_portfolio_quotes",
     "run_portfolio_review",
     "PortfolioImportOutcome",
+    "RevolutDiscoveryError",
+    "RevolutExportSelection",
     "RevolutImportError",
     "combine_revolut_imports",
+    "discover_revolut_exports",
     "import_revolut_exports",
     "reconciliation_report",
 ]

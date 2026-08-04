@@ -47,6 +47,14 @@ SELL_TYPES = frozenset(("SELL - LIMIT", "SELL - STOP"))
 IGNORED_TYPES = frozenset(("DIVIDEND", "CASH TOP-UP", "CASH WITHDRAWAL", "REWARD"))
 KNOWN_TYPES = BUY_TYPES | SELL_TYPES | IGNORED_TYPES
 
+
+class RevolutCsvReadError(ValueError):
+    """A candidate CSV cannot be read from local storage."""
+
+
+class UnknownRevolutCsvFormatError(ValueError):
+    """A readable CSV does not match a supported Revolut structure."""
+
 @dataclass(frozen=True, slots=True)
 class InstrumentPolicy:
     name: str
@@ -151,14 +159,20 @@ def detect_revolut_format(path: str | Path) -> ImportSource:
     try:
         with source.open(encoding="utf-8-sig", newline="") as stream:
             header = next(csv.reader(stream), None)
-    except (OSError, UnicodeError, csv.Error) as error:
-        raise ValueError("no se puede leer el CSV indicado") from error
+    except OSError as error:
+        raise RevolutCsvReadError("no se puede leer el CSV indicado") from error
+    except (UnicodeError, csv.Error) as error:
+        raise UnknownRevolutCsvFormatError(
+            "formato CSV de Revolut desconocido: contenido no válido"
+        ) from error
     normalized = tuple(value.strip() for value in (header or ()))
     if normalized == INVESTMENTS_HEADER:
         return ImportSource.INVESTMENTS
     if normalized == ACCOUNT_STATEMENT_HEADER:
         return ImportSource.XAU_STATEMENT
-    raise ValueError("formato CSV de Revolut desconocido: la cabecera no coincide")
+    raise UnknownRevolutCsvFormatError(
+        "formato CSV de Revolut desconocido: la cabecera no coincide"
+    )
 
 
 def import_investments(

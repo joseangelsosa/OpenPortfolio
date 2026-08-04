@@ -27,6 +27,23 @@ seguro y reemplaza cada archivo de forma atómica. Si la importación no concili
 resultado. La consola muestra únicamente contadores agregados, monedas, estado y rutas de salida;
 el detalle permanece en los archivos privados generados.
 
+También se puede descubrir automáticamente la exportación más reciente de cada tipo dentro de un
+directorio local. Los nombres siguientes son ficticios:
+
+```bash
+.venv/bin/openportfolio import-revolut-latest \
+  --input-directory /datos/ficticios/exportaciones \
+  --snapshot-output /resultados/ficticios/portfolio.yaml \
+  --report-output /resultados/ficticios/reconciliation.txt
+```
+
+`import-revolut-latest` examina únicamente los CSV situados directamente en el directorio y los
+identifica por su estructura y cabeceras, nunca por su nombre. Cuando hay varias exportaciones del
+mismo tipo, escoge la de `mtime` más reciente; no usa la fecha de creación, que no es portable. Si
+dos candidatos más recientes tienen exactamente el mismo `mtime`, detiene la importación para no
+hacer una elección arbitraria. En ese caso se deben proporcionar las dos rutas explícitas mediante
+`import-revolut`, que continúa disponible con la misma interfaz.
+
 ### Política contable del importador
 
 Todas las cantidades, precios, importes, comisiones, tipos de cambio y operaciones monetarias usan `Decimal`; el YAML serializa los decimales como texto y no redondea cantidades fraccionarias de forma destructiva. Las operaciones se ordenan por su fecha normalizada a UTC antes de reconstruir cada posición.

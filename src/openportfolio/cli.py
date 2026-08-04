@@ -15,8 +15,11 @@ from openportfolio.alerts import (
 )
 from openportfolio.application import (
     QuoteCheckItem,
+    RevolutDiscoveryError,
+    RevolutExportSelection,
     RevolutImportError,
     check_portfolio_quotes,
+    discover_revolut_exports,
     import_revolut_exports,
     reconciliation_report,
     run_portfolio_review,
@@ -41,6 +44,8 @@ DEFAULT_PORTFOLIO = Path(__file__).resolve().parents[2] / "examples" / "demo_por
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv) if argv is not None else sys.argv[1:]
+    if arguments and arguments[0] == "import-revolut-latest":
+        return _import_revolut_latest_main(arguments[1:])
     if arguments and arguments[0] == "import-revolut":
         return _import_revolut_main(arguments[1:])
     if arguments and arguments[0] == "review":
@@ -93,8 +98,65 @@ def _import_revolut_main(argv: Sequence[str]) -> int:
                 file=sys.stderr,
             )
             return 2
-    output_paths = (args.snapshot_output, args.report_output)
-    resolved_inputs = {path.resolve() for _, path in inputs}
+    return _run_revolut_import(
+        args.investment_history,
+        args.account_statement,
+        args.snapshot_output,
+        args.report_output,
+    )
+
+
+def _import_revolut_latest_main(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="openportfolio import-revolut-latest",
+        description="Descubre e importa las exportaciones CSV de Revolut más recientes",
+    )
+    parser.add_argument(
+        "--input-directory",
+        type=Path,
+        required=True,
+        help="directorio que contiene las exportaciones CSV",
+    )
+    parser.add_argument(
+        "--snapshot-output",
+        type=Path,
+        required=True,
+        help="ruta de salida del snapshot normalizado",
+    )
+    parser.add_argument(
+        "--report-output",
+        type=Path,
+        required=True,
+        help="ruta de salida del informe de conciliación",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        selection = discover_revolut_exports(args.input_directory)
+    except RevolutDiscoveryError as error:
+        print(f"Error de descubrimiento: {error}", file=sys.stderr)
+        return 2
+
+    return _run_revolut_import(
+        selection.investment_history,
+        selection.account_statement,
+        args.snapshot_output,
+        args.report_output,
+        selection=selection,
+    )
+
+
+def _run_revolut_import(
+    investment_history: Path,
+    account_statement: Path,
+    snapshot_output: Path,
+    report_output: Path,
+    *,
+    selection: RevolutExportSelection | None = None,
+) -> int:
+    inputs = (investment_history, account_statement)
+    output_paths = (snapshot_output, report_output)
+    resolved_inputs = {path.resolve() for path in inputs}
     resolved_outputs = {path.resolve() for path in output_paths}
     if len(resolved_outputs) != len(output_paths) or resolved_inputs & resolved_outputs:
         print(
@@ -107,8 +169,8 @@ def _import_revolut_main(argv: Sequence[str]) -> int:
     now = datetime.now(timezone.utc)
     try:
         outcome = import_revolut_exports(
-            args.investment_history,
-            args.account_statement,
+            investment_history,
+            account_statement,
             generated_at=now,
         )
     except RevolutImportError as error:
@@ -124,21 +186,25 @@ def _import_revolut_main(argv: Sequence[str]) -> int:
         return 1
     assert outcome.snapshot is not None
     try:
-        save_portfolio_snapshot(outcome.snapshot, args.snapshot_output)
-        atomic_write_text(args.report_output, report)
+        save_portfolio_snapshot(outcome.snapshot, snapshot_output)
+        atomic_write_text(report_output, report)
     except PortfolioSnapshotError as error:
         print(f"Error de persistencia: {error}", file=sys.stderr)
         return 2
 
     operations = sum(result.rows_read for result in outcome.results)
     currencies = sorted({position.currency for position in outcome.snapshot.positions})
+    if selection is not None:
+        print(f"CSV examinados: {selection.csv_examined}")
+        print(f"Archivos ignorados: {selection.csv_ignored}")
+        print("Selección: un candidato de cada tipo")
     print(f"Operaciones procesadas: {operations}")
     print(f"Posiciones resultantes: {len(outcome.snapshot.positions)}")
     print(f"Monedas encontradas: {', '.join(currencies) if currencies else 'ninguna'}")
     print(f"Advertencias: {len(outcome.warnings)}")
     print("Conciliación: correcta")
-    print(f"Snapshot generado: {args.snapshot_output}")
-    print(f"Informe generado: {args.report_output}")
+    print(f"Snapshot generado: {snapshot_output}")
+    print(f"Informe generado: {report_output}")
     return 0
 
 

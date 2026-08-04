@@ -16,7 +16,9 @@ from openportfolio.domain import (
 )
 from openportfolio.importers import (
     ImportIssue,
+    RevolutCsvReadError,
     RevolutSourceResult,
+    UnknownRevolutCsvFormatError,
     detect_revolut_format,
     import_investments,
     import_xau_statement,
@@ -25,6 +27,91 @@ from openportfolio.importers import (
 
 class RevolutImportError(ValueError):
     """The supplied files cannot be used as the expected Revolut exports."""
+
+
+class RevolutDiscoveryError(ValueError):
+    """A directory cannot yield one unambiguous pair of Revolut exports."""
+
+
+@dataclass(frozen=True, slots=True)
+class RevolutExportSelection:
+    investment_history: Path
+    account_statement: Path
+    csv_examined: int
+    csv_ignored: int
+
+
+def discover_revolut_exports(directory: str | Path) -> RevolutExportSelection:
+    """Select the newest supported export of each kind from one directory."""
+    source_directory = Path(directory)
+    try:
+        if not source_directory.is_dir():
+            raise RevolutDiscoveryError(
+                "el directorio de entrada no existe o no es legible"
+            )
+        entries = tuple(source_directory.iterdir())
+    except OSError as error:
+        raise RevolutDiscoveryError(
+            "el directorio de entrada no existe o no es legible"
+        ) from error
+
+    csv_paths: list[Path] = []
+    try:
+        for entry in entries:
+            if entry.suffix.lower() == ".csv" and entry.is_file():
+                csv_paths.append(entry)
+    except OSError as error:
+        raise RevolutDiscoveryError(
+            "no se pueden examinar de forma segura los CSV del directorio"
+        ) from error
+
+    if not csv_paths:
+        raise RevolutDiscoveryError("el directorio no contiene archivos CSV")
+
+    candidates: dict[ImportSource, list[tuple[int, Path]]] = {
+        ImportSource.INVESTMENTS: [],
+        ImportSource.XAU_STATEMENT: [],
+    }
+    ignored = 0
+    for path in csv_paths:
+        try:
+            detected = detect_revolut_format(path)
+            modified_at = path.stat().st_mtime_ns
+        except RevolutCsvReadError as error:
+            raise RevolutDiscoveryError(
+                "uno de los archivos CSV no existe o no es legible"
+            ) from error
+        except UnknownRevolutCsvFormatError:
+            ignored += 1
+            continue
+        except OSError as error:
+            raise RevolutDiscoveryError(
+                "uno de los archivos CSV no existe o no es legible"
+            ) from error
+        candidates[detected].append((modified_at, path))
+
+    selected: dict[ImportSource, Path] = {}
+    for source in ImportSource:
+        matches = candidates[source]
+        if not matches:
+            raise RevolutDiscoveryError(
+                f"falta un CSV compatible con {source.value}"
+            )
+        newest_mtime = max(modified_at for modified_at, _ in matches)
+        newest = [path for modified_at, path in matches if modified_at == newest_mtime]
+        if len(newest) != 1:
+            raise RevolutDiscoveryError(
+                "hay varios candidatos con el mismo mtime; proporciona rutas "
+                "explícitas mediante import-revolut"
+            )
+        selected[source] = newest[0]
+
+    return RevolutExportSelection(
+        investment_history=selected[ImportSource.INVESTMENTS],
+        account_statement=selected[ImportSource.XAU_STATEMENT],
+        csv_examined=len(csv_paths),
+        csv_ignored=ignored,
+    )
 
 
 @dataclass(frozen=True, slots=True)
