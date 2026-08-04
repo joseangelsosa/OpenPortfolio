@@ -23,6 +23,15 @@ Contiene el vocabulario común, los modelos de dominio, identificadores, tipos d
 
 No conoce yfinance, ntfy, Streamlit, formatos de archivos ni mecanismos de ejecución. Tampoco contiene reglas específicas de presentación o transporte.
 
+`MarketMapping` forma parte de este vocabulario estable: relaciona el identificador operativo de un
+instrumento importado con coordenadas explícitas de cotización o con una exclusión. El dominio valida
+la coherencia de cada entrada sin leer YAML ni conocer cómo se obtiene una cotización.
+
+La persistencia carga el YAML privado, aplica versión, claves únicas, campos estrictos y el conjunto
+de proveedores admitidos por el contrato de market data. La aplicación compara ese mapping con un
+`PortfolioSnapshot` y genera un informe neutral. La CLI se limita a cargar, presentar y elegir el
+código de salida; no contiene reglas de correspondencia ni construye adaptadores de mercado.
+
 ### Portfolio
 
 Reconstruye y representa la cartera a partir de posiciones o transacciones. Sus responsabilidades son:

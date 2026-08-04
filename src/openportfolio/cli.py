@@ -23,9 +23,11 @@ from openportfolio.application import (
     discover_revolut_exports,
     import_revolut_exports,
     reconciliation_report,
+    render_market_mapping_validation_text,
     render_portfolio_summary_text,
     run_portfolio_review,
     summarize_portfolio,
+    validate_market_mapping,
 )
 from openportfolio.domain import Alert, MarketQuote, Portfolio, QuoteSource, Severity
 from openportfolio.market_data import MarketDataError, MarketDataProvider
@@ -33,9 +35,11 @@ from openportfolio.persistence import (
     DEFAULT_ALERT_STATE_PATH,
     AlertStateError,
     JsonAlertStateStore,
+    MarketMappingError,
     PortfolioSnapshotError,
     atomic_write_text,
     load_portfolio,
+    load_market_mapping,
     load_portfolio_snapshot,
     save_portfolio_snapshot,
 )
@@ -50,6 +54,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv) if argv is not None else sys.argv[1:]
     if arguments and arguments[0] == "portfolio-summary":
         return _portfolio_summary_main(arguments[1:])
+    if arguments and arguments[0] == "validate-market-mapping":
+        return _validate_market_mapping_main(arguments[1:])
     if arguments and arguments[0] == "import-revolut-latest":
         return _import_revolut_latest_main(arguments[1:])
     if arguments and arguments[0] == "import-revolut":
@@ -100,6 +106,85 @@ def _portfolio_summary_main(argv: Sequence[str]) -> int:
     else:
         print(render_portfolio_summary_text(summary), end="")
     return 0
+
+
+def _validate_market_mapping_main(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="openportfolio validate-market-mapping",
+        description=(
+            "Valida offline la correspondencia entre un snapshot y símbolos de mercado"
+        ),
+    )
+    parser.add_argument(
+        "--snapshot",
+        type=Path,
+        required=True,
+        help="ruta al snapshot de cartera importado",
+    )
+    parser.add_argument(
+        "--mapping",
+        type=Path,
+        required=True,
+        help="ruta al YAML privado de correspondencias",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="formato de salida (por defecto: text)",
+    )
+    args = parser.parse_args(argv)
+
+    if not _is_readable_file(args.snapshot):
+        _print_market_mapping_error(
+            args.format,
+            "snapshot_not_readable",
+            "Error de snapshot: el archivo no existe o no es legible.",
+        )
+        return 2
+    if not _is_readable_file(args.mapping):
+        _print_market_mapping_error(
+            args.format,
+            "mapping_not_readable",
+            "Error de mapping: el archivo no existe o no es legible.",
+        )
+        return 2
+    try:
+        snapshot = load_portfolio_snapshot(args.snapshot)
+    except PortfolioSnapshotError:
+        _print_market_mapping_error(
+            args.format,
+            "invalid_snapshot",
+            "Error de snapshot: el archivo no tiene un formato compatible.",
+        )
+        return 1
+    try:
+        mapping = load_market_mapping(args.mapping)
+    except MarketMappingError:
+        _print_market_mapping_error(
+            args.format,
+            "invalid_mapping",
+            "Error de mapping: el archivo no tiene un formato compatible.",
+        )
+        return 1
+
+    validation = validate_market_mapping(snapshot, mapping)
+    if args.format == "json":
+        print(json.dumps(validation.as_dict(), ensure_ascii=False, sort_keys=True))
+    else:
+        print(render_market_mapping_validation_text(validation), end="")
+    return 0 if validation.ready_for_market_valuation else 1
+
+
+def _print_market_mapping_error(output_format: str, code: str, message: str) -> None:
+    if output_format == "json":
+        payload = {
+            "validation_schema_version": 1,
+            "error": {"code": code, "message": message},
+        }
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+    else:
+        print(message, file=sys.stderr)
 
 
 def _import_revolut_main(argv: Sequence[str]) -> int:

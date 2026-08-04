@@ -21,6 +21,11 @@ from openportfolio.domain.imported_portfolio import (
     SNAPSHOT_SCHEMA_VERSION,
     SourceImportMetadata,
 )
+from openportfolio.domain.market_mapping import (
+    MARKET_MAPPING_VERSION,
+    MarketMapping,
+    MarketMappingEntry,
+)
 
 __all__ = [
     "Alert",
@@ -40,4 +45,7 @@ __all__ = [
     "PositionStatus",
     "SNAPSHOT_SCHEMA_VERSION",
     "SourceImportMetadata",
+    "MARKET_MAPPING_VERSION",
+    "MarketMapping",
+    "MarketMappingEntry",
 ]

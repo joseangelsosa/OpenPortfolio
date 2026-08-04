@@ -1,0 +1,10 @@
+# Todos los identificadores y símbolos de este archivo son ficticios.
+version: 1
+instruments:
+  ACME:
+    market_symbol: ACME.TEST
+    provider: yfinance
+    expected_currency: USD
+    enabled: true
+  SYNTHETIC-NON-QUOTABLE:
+    enabled: false

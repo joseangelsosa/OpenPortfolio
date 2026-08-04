@@ -3,6 +3,9 @@ from typing import Protocol
 from openportfolio.domain import Instrument, MarketQuote
 
 
+SUPPORTED_MAPPING_PROVIDER_NAMES = frozenset({"yfinance"})
+
+
 class MarketDataError(RuntimeError):
     """Base error exposed by all market-data adapters."""
 
@@ -25,4 +28,3 @@ class MarketDataProvider(Protocol):
     def get_quote(self, instrument: Instrument) -> MarketQuote:
         """Return a normalized quote or raise an explicit market-data error."""
         ...
-

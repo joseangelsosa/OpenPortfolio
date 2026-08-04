@@ -6,6 +6,7 @@ from openportfolio.market_data.contracts import (
     MarketDataProvider,
     ProviderResponseError,
     ProviderSymbolError,
+    SUPPORTED_MAPPING_PROVIDER_NAMES,
 )
 
 __all__ = [
@@ -14,5 +15,5 @@ __all__ = [
     "MarketDataProvider",
     "ProviderResponseError",
     "ProviderSymbolError",
+    "SUPPORTED_MAPPING_PROVIDER_NAMES",
 ]
-

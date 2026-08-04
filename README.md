@@ -85,6 +85,43 @@ El resumen identifica explícitamente los campos que el snapshot actual no conse
 posiciones cerradas, las advertencias de importación y el coste acumulado. Todos los ejemplos y
 tests del repositorio usan exclusivamente instrumentos y cantidades ficticios.
 
+### Correspondencias privadas de mercado
+
+El snapshot conserva `source_ticker` como identificador operativo, pero un proveedor puede requerir
+otro símbolo. Esa relación vive en un YAML independiente y versionado. El contrato mínimo usa la
+clave de `instruments` como `source_ticker`; una entrada habilitada declara `market_symbol`,
+`provider`, `expected_currency` y `enabled: true`. El ejemplo
+[market_mapping.yaml](examples/market_mapping.yaml) contiene únicamente valores ficticios.
+
+Una entrada excluida declara solamente `enabled: false`. No debe añadirse un símbolo supuesto para
+un instrumento que no sea cotizable o cuyo símbolo fiable se desconozca. Para evitar configuraciones
+ambiguas, el cargador rechaza campos desconocidos, claves duplicadas y cualquier entrada excluida
+que también declare datos de mercado. La versión 1 admite `yfinance` como único proveedor de mapping,
+pero el contrato mantiene el nombre del proveedor explícito para poder sustituir el adaptador.
+
+La correspondencia real es configuración privada del usuario. Si sus identificadores revelan la
+composición de la cartera, no debe copiarse ni versionarse en este repositorio público. Tampoco debe
+contener cantidades, costes, precios de compra, pesos ni otros datos de cartera.
+
+La configuración se comprueba offline con los cargadores oficiales:
+
+```bash
+openportfolio validate-market-mapping \
+  --snapshot /datos/privados/portfolio.yaml \
+  --mapping /datos/privados/market-mapping.yaml
+```
+
+`--format json` produce una salida determinista para automatización; `text` es el valor
+predeterminado. El comando informa de correspondencias habilitadas, exclusiones, faltantes, entradas
+sobrantes e incompatibilidades de moneda. Termina con código cero cuando todas las posiciones están
+resueltas o excluidas y sus monedas son compatibles; una entrada sobrante se informa, pero por sí
+sola no bloquea la validación.
+
+Validar no consulta cotizaciones ni modifica archivos. `expected_currency` es la moneda que debería
+devolver el proveedor para ese símbolo y permite detectar antes de una futura valoración una
+correspondencia configurada con la moneda equivocada. Este incremento no valora la cartera ni
+convierte divisas.
+
 ## Instalación
 
 Requiere Python 3.13 y un entorno virtual. Para instalar el proyecto y las dependencias de desarrollo en el entorno existente:

@@ -21,6 +21,12 @@ from openportfolio.application.portfolio_summary import (
     render_portfolio_summary_text,
     summarize_portfolio,
 )
+from openportfolio.application.market_mapping_validation import (
+    CurrencyMismatch,
+    MarketMappingValidation,
+    render_market_mapping_validation_text,
+    validate_market_mapping,
+)
 
 __all__ = [
     "QuoteCheckItem",
@@ -39,4 +45,8 @@ __all__ = [
     "PortfolioSummary",
     "render_portfolio_summary_text",
     "summarize_portfolio",
+    "CurrencyMismatch",
+    "MarketMappingValidation",
+    "render_market_mapping_validation_text",
+    "validate_market_mapping",
 ]
