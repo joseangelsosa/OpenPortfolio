@@ -154,6 +154,38 @@ reconstruye la cartera desde CSV, aplica recomendaciones o reglas del IOS, persi
 envía notificaciones. Los ejemplos y tests contienen solo datos sintéticos; el snapshot y el mapping
 reales deben conservarse fuera del repositorio público.
 
+### Informe privado persistente de valoración
+
+`generate-valuation-report` reutiliza el mismo caso de uso de `value-portfolio` y consulta los
+mismos precios de mercado, pero guarda el contrato de valoración como un informe JSON privado:
+
+```bash
+openportfolio generate-valuation-report \
+  --snapshot /datos/ficticios/snapshot-sintetico.yaml \
+  --mapping /datos/ficticios/mapping-sintetico.yaml \
+  --output /repositorio-privado/reports/latest_valuation.json \
+  --format json
+```
+
+JSON es el formato predeterminado y el único formato persistido admitido actualmente. El informe
+incluye las versiones del contrato de valoración y del informe, el instante de generación, la
+cobertura, posiciones, exclusiones, errores saneados y la procedencia de las cotizaciones. Los
+decimales se conservan como cadenas sin pérdida de precisión. EUR, USD y cualquier otra moneda
+permanecen en subtotales separados: no se realiza conversión de divisas ni se mezclan importes en un
+total global. El comando tampoco aplica recomendaciones ni reglas del IOS.
+
+La escritura usa un archivo temporal en el mismo directorio y reemplazo atómico, de modo que un
+fallo no trunca el informe anterior. Por defecto, una valoración parcial devuelve código distinto de
+cero y conserva el último informe completo. Si se desea guardar expresamente el resultado parcial
+en otro destino, puede añadirse `--allow-partial-output`; el JSON queda marcado como `partial` y el
+código de salida sigue siendo distinto de cero. Un snapshot o mapping inválido, o un mapping no
+preparado, nunca produce un informe.
+
+El informe contiene información financiera detallada y debe guardarse fuera del repositorio público,
+idealmente en un repositorio privado con controles de acceso. La salida normal de terminal contiene
+solo estado operativo, cobertura agregada, monedas y código de salida; no imprime cantidades,
+precios, costes, valores ni rentabilidades.
+
 ## Instalación
 
 Requiere Python 3.13 y un entorno virtual. Para instalar el proyecto y las dependencias de desarrollo en el entorno existente:

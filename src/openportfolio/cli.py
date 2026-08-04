@@ -15,6 +15,7 @@ from openportfolio.alerts import (
     NtfyNotifier,
 )
 from openportfolio.application import (
+    PortfolioValuation,
     QuoteCheckItem,
     RevolutDiscoveryError,
     RevolutExportSelection,
@@ -38,12 +39,15 @@ from openportfolio.persistence import (
     AlertStateError,
     JsonAlertStateStore,
     MarketMappingError,
+    PartialValuationReportError,
     PortfolioSnapshotError,
+    ValuationReportError,
     atomic_write_text,
     load_portfolio,
     load_market_mapping,
     load_portfolio_snapshot,
     save_portfolio_snapshot,
+    write_valuation_report,
 )
 from openportfolio.persistence.yaml_portfolio import PortfolioConfigurationError
 from openportfolio.providers import FakeMarketDataProvider
@@ -60,6 +64,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _validate_market_mapping_main(arguments[1:])
     if arguments and arguments[0] == "value-portfolio":
         return _value_portfolio_main(arguments[1:])
+    if arguments and arguments[0] == "generate-valuation-report":
+        return _generate_valuation_report_main(arguments[1:])
     if arguments and arguments[0] == "import-revolut-latest":
         return _import_revolut_latest_main(arguments[1:])
     if arguments and arguments[0] == "import-revolut":
@@ -279,6 +285,118 @@ def _print_portfolio_valuation_input_error(
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
     else:
         print(message, file=sys.stderr)
+
+
+def _generate_valuation_report_main(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="openportfolio generate-valuation-report",
+        description="Genera atómicamente un informe JSON privado de valoración",
+    )
+    parser.add_argument("--snapshot", type=Path, required=True)
+    parser.add_argument("--mapping", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--format",
+        choices=("json",),
+        default="json",
+        help="formato persistido (por defecto: json)",
+    )
+    parser.add_argument(
+        "--allow-partial-output",
+        action="store_true",
+        help="permite escribir un resultado parcial solicitado expresamente",
+    )
+    args = parser.parse_args(argv)
+
+    if not _is_readable_file(args.snapshot):
+        _print_valuation_report_input_failure(
+            args.output,
+            "Error de snapshot: el archivo no existe o no es legible.",
+            2,
+        )
+        return 2
+    if not _is_readable_file(args.mapping):
+        _print_valuation_report_input_failure(
+            args.output,
+            "Error de mapping: el archivo no existe o no es legible.",
+            2,
+        )
+        return 2
+    try:
+        snapshot = load_portfolio_snapshot(args.snapshot)
+    except PortfolioSnapshotError:
+        _print_valuation_report_input_failure(
+            args.output,
+            "Error de snapshot: el archivo no tiene un formato compatible.",
+            1,
+        )
+        return 1
+    try:
+        mapping = load_market_mapping(args.mapping)
+    except MarketMappingError:
+        _print_valuation_report_input_failure(
+            args.output,
+            "Error de mapping: el archivo no tiene un formato compatible.",
+            1,
+        )
+        return 1
+
+    valuation = value_portfolio(
+        snapshot,
+        mapping,
+        lambda name: _provider(name, {}, {}),
+    )
+    try:
+        write_valuation_report(
+            valuation,
+            args.output,
+            allow_partial=args.allow_partial_output,
+        )
+    except PartialValuationReportError as error:
+        print(f"Informe no generado: {error}.", file=sys.stderr)
+        _print_valuation_report_summary(args.output, valuation, False, 1)
+        return 1
+    except ValuationReportError as error:
+        print(f"Informe no generado: {error}.", file=sys.stderr)
+        exit_code = 1 if not valuation.ok else 3
+        _print_valuation_report_summary(args.output, valuation, False, exit_code)
+        return exit_code
+
+    exit_code = 0 if valuation.ok else 1
+    _print_valuation_report_summary(args.output, valuation, True, exit_code)
+    return exit_code
+
+
+def _print_valuation_report_input_failure(
+    output: Path, message: str, exit_code: int
+) -> None:
+    print(message, file=sys.stderr)
+    print("Informe: no generado")
+    print(f"Destino: {output}")
+    print("Estado: no disponible")
+    print(f"Código de salida: {exit_code}")
+
+
+def _print_valuation_report_summary(
+    output: Path,
+    valuation: PortfolioValuation,
+    written: bool,
+    exit_code: int,
+) -> None:
+    currencies = sorted({item.currency for item in valuation.currency_totals})
+    print(f"Informe: {'generado' if written else 'no generado'}")
+    print(f"Destino: {output}")
+    print(
+        "Posiciones: "
+        f"totales {valuation.positions_total}, "
+        f"habilitadas {valuation.enabled_positions}, "
+        f"valoradas {valuation.valued_positions}, "
+        f"excluidas {valuation.excluded_positions}, "
+        f"fallidas {valuation.failed_positions}"
+    )
+    print("Monedas: " + (", ".join(currencies) if currencies else "ninguna"))
+    print(f"Estado: {'completo' if valuation.ok else 'parcial'}")
+    print(f"Código de salida: {exit_code}")
 
 
 def _import_revolut_main(argv: Sequence[str]) -> int:

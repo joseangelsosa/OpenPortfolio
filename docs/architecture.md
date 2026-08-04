@@ -112,6 +112,15 @@ Define puertos para cargar configuración y guardar o recuperar estado cuando re
 
 Los detalles del formato pertenecen a adaptadores de persistencia. La configuración versionable contendrá solo datos ficticios o plantillas sin secretos. La persistencia de históricos, migraciones y concurrencia queda fuera de la primera versión.
 
+El informe privado de valoración es un adaptador JSON de esta capa. Recibe el resultado inmutable del
+caso de uso de valoración, sin conocer yfinance ni repetir cálculos, y añade únicamente metadata del
+contrato persistente. Construye y valida el documento completo antes de escribirlo, usa un temporal
+en el directorio de destino, sincroniza su contenido y lo reemplaza atómicamente. La política
+predeterminada conserva el último informe completo ante fallos parciales; un parcial solo se escribe
+cuando el usuario solicita expresamente otro output y siempre conserva un código de salida no cero.
+La CLI se limita a cargar entradas, construir el proveedor, invocar el caso de uso y el adaptador, y
+mostrar un resumen operativo sin cifras financieras.
+
 ## Dependencias permitidas
 
 Las flechas indican que el módulo de origen puede depender del módulo de destino. `Domain` no depende de ninguna otra capa.

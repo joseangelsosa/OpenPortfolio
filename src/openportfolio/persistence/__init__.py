@@ -19,6 +19,13 @@ from openportfolio.persistence.yaml_market_mapping import (
     MarketMappingError,
     load_market_mapping,
 )
+from openportfolio.persistence.valuation_report import (
+    PartialValuationReportError,
+    VALUATION_REPORT_CONTRACT_VERSION,
+    ValuationReportError,
+    build_valuation_report,
+    write_valuation_report,
+)
 
 __all__ = [
     "DEFAULT_ALERT_STATE_PATH",
@@ -35,4 +42,9 @@ __all__ = [
     "save_portfolio_snapshot",
     "MarketMappingError",
     "load_market_mapping",
+    "PartialValuationReportError",
+    "VALUATION_REPORT_CONTRACT_VERSION",
+    "ValuationReportError",
+    "build_valuation_report",
+    "write_valuation_report",
 ]
