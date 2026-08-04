@@ -6,6 +6,55 @@ El proyecto contiene una primera vertical de la Fase 1: carga una cartera comple
 
 La conversión de divisas todavía no está implementada. Los totales se muestran por moneda y nunca se suman EUR y USD silenciosamente.
 
+## Importación privada de Revolut
+
+`import-revolut` reconstruye un snapshot local mínimo a partir de exportaciones CSV de Revolut. Admite el historial de inversiones con cabecera `Date,Ticker,Type,Quantity,Price per share,Total Amount,Currency,FX Rate` y el extracto de cuenta español usado para conversiones XAU. Funciona completamente offline: no consulta cotizaciones, no construye notifiers, no accede a `alert_state.json` y no activa ni modifica alertas o revisiones programadas.
+
+Los archivos son independientes. Se puede importar solo inversiones, solo XAU o ambos:
+
+```bash
+.venv/bin/openportfolio import-revolut \
+  --investments /ruta/ficticia/export-investments.csv \
+  --account-statement /ruta/ficticia/account-statement.csv \
+  --output .openportfolio/private/portfolio.yaml \
+  --report .openportfolio/private/reconciliation.txt
+```
+
+También se puede dejar que el comando identifique el formato exclusivamente por la cabecera, sin depender del nombre del archivo:
+
+```bash
+.venv/bin/openportfolio import-revolut \
+  --input /ruta/ficticia/export.csv \
+  --existing-snapshot .openportfolio/private/portfolio.yaml \
+  --output .openportfolio/private/portfolio.yaml
+```
+
+Debe indicarse al menos una de las opciones `--input`, `--investments` o `--account-statement`. `--input` se puede repetir. Si `--existing-snapshot` se omite y `--output` ya existe, ese mismo snapshot se usa como base. Cada fuente gobierna solo su partición: el historial de inversiones sustituye acciones y ETF de `revolut_investments`, mientras que el extracto sustituye XAU de `revolut_xau_statement`. Las posiciones de una fuente no recibida se conservan y una fuente aún ausente queda marcada como `not_imported`. La versión del snapshot anterior se valida antes de combinar y ningún error produce una actualización parcial.
+
+Para validar sin crear directorios ni escribir el snapshot o el informe:
+
+```bash
+.venv/bin/openportfolio import-revolut \
+  --input /ruta/ficticia/export.csv \
+  --dry-run
+```
+
+### Política contable del importador
+
+Todas las cantidades, precios, importes, comisiones, tipos de cambio y operaciones monetarias usan `Decimal`; el YAML serializa los decimales como texto y no redondea cantidades fraccionarias de forma destructiva. Las operaciones se ordenan por su fecha normalizada a UTC antes de reconstruir cada posición.
+
+En una compra, el valor absoluto de `Total Amount` es el coste efectivo cargado por Revolut y `Total Amount / Quantity` determina el coste unitario. `Price per share` se conserva durante la reconstrucción para comprobar la operación; una diferencia frente a `Price per share × Quantity` se considera material cuando alcanza el mayor valor entre `0.01` unidades monetarias y el `0.1 %` del producto. En ese caso genera una advertencia agregada, pero no se corrige ni se supone errónea porque puede representar una comisión o ajuste. En una venta, las unidades y el coste contable se reducen usando el coste medio anterior. El precio de venta no cambia el coste medio de las unidades restantes. Una venta superior a las unidades disponibles, una moneda distinta para el mismo ticker o un tipo desconocido bloquean la importación.
+
+Dividendos, recargas, retiradas y recompensas se cuentan en la conciliación, pero no cambian cantidad ni coste medio en esta versión. Sus importes no se incluyen en el snapshot o en el informe. Las posiciones cerradas desaparecen del snapshot activo y se enumeran de forma agregada en la conciliación.
+
+Para XAU, cada cambio de unidades se calcula como `Importe - Comisión` y se valida contra la evolución de `Saldo`. Las fechas sin zona horaria del extracto español se interpretan como `Europe/Madrid` y se normalizan a UTC, dejando constancia en las advertencias. El extracto permite conciliar unidades, pero no aporta necesariamente el contravalor completo pagado en efectivo; por ello XAU se guarda con `cost_basis_status: unavailable` y `average_cost: null`. No se asigna coste cero y el saldo de unidades nunca se usa como coste. Para calcularlo harían falta los contravalores y comisiones en la moneda de efectivo de cada conversión.
+
+`source_ticker` es el símbolo literal de Revolut. `market_symbol` es el símbolo confirmado para un proveedor de cotizaciones. El catálogo declarativo reúne el nombre, mapping y política manual de cada instrumento; el algoritmo no contiene condicionales por ticker ni adivina sufijos de bolsa. Incluye los mappings confirmados `H4ZF -> H4ZF.DE`, `H4ZC -> H4ZC.DE`, `NESR -> NESR.DE`, `IBE1 -> IBE1.DE`, `B4F -> B4F.F` y `ZAL -> ZAL.DE`, además de mappings identidad confirmados para los valores estadounidenses. Una posición abierta sin mapping queda explícitamente sin resolver y no se transforma en configuración operativa ejecutable.
+
+El mismo catálogo permite declarar excepciones sin falsificar movimientos históricos. Una posición puede conservar su cantidad reconstruida con estado `legacy`, `tradable: false` y `active_monitoring: false`, sin `market_symbol` y con un motivo configurable. Estas posiciones aparecen separadas en la conciliación y quedan fuera de cualquier futura configuración operativa o consulta de cotización. La política confirmada para IRBTQ conserva sus unidades históricas como posición no operativa debido a la quiebra y bloqueo indicados por el usuario; no inventa una venta ni la presenta como cerrada.
+
+Los CSV y resultados reales son datos financieros privados. El repositorio ignora todos los CSV, `.openportfolio/`, snapshots e informes de conciliación con los patrones locales previstos. No se deben copiar exportaciones reales a ejemplos, fixtures ni commits. Las pruebas usan únicamente datos sintéticos mínimos. Importar un snapshot no modifica `examples/operational_review.yaml`, no crea reglas del 5 %/10 % y no supone que el coste medio sea una referencia de alerta de mercado.
+
 ## Instalación
 
 Requiere Python 3.13 y un entorno virtual. Para instalar el proyecto y las dependencias de desarrollo en el entorno existente:

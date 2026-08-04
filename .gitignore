@@ -50,3 +50,11 @@ dist/
 
 # Estado local generado
 state/
+
+# Importaciones financieras privadas y artefactos derivados
+*.csv
+.openportfolio/
+*revolut-portfolio*.yaml
+*portfolio-snapshot*.yaml
+*reconciliation*.txt
+*conciliacion*.txt

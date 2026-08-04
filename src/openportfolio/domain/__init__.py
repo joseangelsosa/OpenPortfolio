@@ -11,6 +11,16 @@ from openportfolio.domain.models import (
     QuoteSource,
     Severity,
 )
+from openportfolio.domain.imported_portfolio import (
+    CostBasisStatus,
+    ImportedPosition,
+    ImportSource,
+    ImportStatus,
+    PortfolioSnapshot,
+    PositionStatus,
+    SNAPSHOT_SCHEMA_VERSION,
+    SourceImportMetadata,
+)
 
 __all__ = [
     "Alert",
@@ -22,4 +32,12 @@ __all__ = [
     "Position",
     "QuoteSource",
     "Severity",
+    "CostBasisStatus",
+    "ImportedPosition",
+    "ImportSource",
+    "ImportStatus",
+    "PortfolioSnapshot",
+    "PositionStatus",
+    "SNAPSHOT_SCHEMA_VERSION",
+    "SourceImportMetadata",
 ]

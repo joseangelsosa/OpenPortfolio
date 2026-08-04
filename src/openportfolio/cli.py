@@ -14,8 +14,10 @@ from openportfolio.alerts import (
     NtfyNotifier,
 )
 from openportfolio.application import (
+    combine_revolut_imports,
     QuoteCheckItem,
     check_portfolio_quotes,
+    reconciliation_report,
     run_portfolio_review,
 )
 from openportfolio.domain import Alert, MarketQuote, Portfolio, QuoteSource, Severity
@@ -24,7 +26,11 @@ from openportfolio.persistence import (
     DEFAULT_ALERT_STATE_PATH,
     AlertStateError,
     JsonAlertStateStore,
+    PortfolioSnapshotError,
+    atomic_write_text,
     load_portfolio,
+    load_portfolio_snapshot,
+    save_portfolio_snapshot,
 )
 from openportfolio.persistence.yaml_portfolio import PortfolioConfigurationError
 from openportfolio.providers import FakeMarketDataProvider
@@ -35,11 +41,164 @@ DEFAULT_PORTFOLIO = Path(__file__).resolve().parents[2] / "examples" / "demo_por
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv) if argv is not None else sys.argv[1:]
+    if arguments and arguments[0] == "import-revolut":
+        return _import_revolut_main(arguments[1:])
     if arguments and arguments[0] == "review":
         return _review_main(arguments[1:])
     if arguments and arguments[0] == "send-test-notification":
         return _test_notification_main(arguments[1:])
     return _valuation_main(arguments)
+
+
+def _import_revolut_main(argv: Sequence[str]) -> int:
+    from openportfolio.domain import ImportSource
+    from openportfolio.importers import (
+        detect_revolut_format,
+        import_investments,
+        import_xau_statement,
+    )
+
+    parser = argparse.ArgumentParser(
+        prog="openportfolio import-revolut",
+        description="Importa exportaciones CSV de Revolut sin red ni activación de alertas",
+    )
+    parser.add_argument(
+        "--input",
+        type=Path,
+        action="append",
+        default=[],
+        help="CSV cuyo formato se detectará por la cabecera; se puede repetir",
+    )
+    parser.add_argument("--investments", type=Path, help="historial CSV de inversiones")
+    parser.add_argument(
+        "--account-statement", type=Path, help="extracto CSV para la posición XAU"
+    )
+    parser.add_argument(
+        "--existing-snapshot",
+        type=Path,
+        help="snapshot anterior; si se omite y --output existe, se usa --output",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path(".openportfolio/private/portfolio.yaml"),
+        help="snapshot privado de salida",
+    )
+    parser.add_argument(
+        "--report",
+        type=Path,
+        default=Path(".openportfolio/private/reconciliation.txt"),
+        help="informe privado de conciliación",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="valida y resume sin escribir snapshot ni informe",
+    )
+    args = parser.parse_args(argv)
+
+    candidates: list[tuple[ImportSource, Path]] = []
+    if args.investments is not None:
+        candidates.append((ImportSource.INVESTMENTS, args.investments))
+    if args.account_statement is not None:
+        candidates.append((ImportSource.XAU_STATEMENT, args.account_statement))
+    for input_path in args.input:
+        try:
+            candidates.append((detect_revolut_format(input_path), input_path))
+        except ValueError as error:
+            print(f"Error de importación: {error}", file=sys.stderr)
+            return 2
+    if not candidates:
+        print("Error de importación: debe indicarse al menos un CSV de entrada.", file=sys.stderr)
+        return 2
+    sources = [source for source, _ in candidates]
+    if len(sources) != len(set(sources)):
+        print(
+            "Error de importación: se recibió más de un archivo para la misma fuente.",
+            file=sys.stderr,
+        )
+        return 2
+
+    existing_path = args.existing_snapshot
+    if existing_path is None and args.output.exists():
+        existing_path = args.output
+    try:
+        existing = (
+            load_portfolio_snapshot(existing_path) if existing_path is not None else None
+        )
+    except PortfolioSnapshotError as error:
+        print(f"Error de snapshot: {error}", file=sys.stderr)
+        return 2
+
+    importers = {
+        ImportSource.INVESTMENTS: import_investments,
+        ImportSource.XAU_STATEMENT: import_xau_statement,
+    }
+    results = tuple(importers[source](path) for source, path in candidates)
+    now = datetime.now(timezone.utc)
+    outcome = combine_revolut_imports(results, existing, generated_at=now)
+    report = reconciliation_report(outcome, generated_at=now)
+
+    if not args.dry_run:
+        try:
+            if outcome.ok:
+                assert outcome.snapshot is not None
+                save_portfolio_snapshot(outcome.snapshot, args.output)
+            atomic_write_text(args.report, report)
+        except PortfolioSnapshotError as error:
+            print(f"Error de persistencia: {error}", file=sys.stderr)
+            return 2
+
+    active_equities = (
+        sum(
+            1
+            for position in outcome.snapshot.positions
+            if position.source is ImportSource.INVESTMENTS and position.active_monitoring
+        )
+        if outcome.snapshot is not None
+        else 0
+    )
+    xau_count = (
+        sum(
+            1
+            for position in outcome.snapshot.positions
+            if position.source is ImportSource.XAU_STATEMENT
+        )
+        if outcome.snapshot is not None
+        else 0
+    )
+    historical_count = (
+        sum(1 for position in outcome.snapshot.positions if not position.active_monitoring)
+        if outcome.snapshot is not None
+        else 0
+    )
+    unresolved = (
+        sum(
+            1
+            for position in outcome.snapshot.positions
+            if position.source is ImportSource.INVESTMENTS
+            and position.active_monitoring
+            and position.market_symbol is None
+        )
+        if outcome.snapshot is not None
+        else 0
+    )
+    mode = "DRY RUN; sin escritura. " if args.dry_run else ""
+    print(
+        f"{mode}Importación Revolut: {sum(result.rows_read for result in results)} filas, "
+        f"{active_equities} acciones/ETF activas, {xau_count} XAU, "
+        f"{historical_count} históricas no operativas, {unresolved} tickers activos sin resolver, "
+        f"{len(outcome.warnings)} advertencias, {len(outcome.errors)} errores."
+    )
+    for issue in outcome.errors:
+        print(f"Error: {issue.render()}", file=sys.stderr)
+    if outcome.errors:
+        if not args.dry_run:
+            print("Snapshot no modificado; se escribió únicamente el informe saneado.")
+        return 1
+    if not args.dry_run:
+        print("Snapshot e informe privados escritos de forma atómica.")
+    return 0
 
 
 def _valuation_main(argv: Sequence[str]) -> int:
