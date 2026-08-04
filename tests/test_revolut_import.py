@@ -458,24 +458,115 @@ def test_incompatible_snapshot_version_is_rejected(tmp_path: Path) -> None:
         load_portfolio_snapshot(path)
 
 
-def test_cli_dry_run_writes_nothing_and_generic_input_works(tmp_path: Path) -> None:
-    source = _investments(tmp_path / "phone-export", [_investment_row()])
-    output = tmp_path / "private" / "portfolio.yaml"
-    report = tmp_path / "private" / "report.txt"
-    assert main(["import-revolut", "--input", str(source), "--output", str(output), "--report", str(report), "--dry-run"]) == 0
-    assert not output.exists() and not report.exists()
+def _cli_arguments(
+    investments: Path,
+    statement: Path,
+    snapshot: Path,
+    report: Path,
+) -> list[str]:
+    return [
+        "import-revolut",
+        "--investment-history",
+        str(investments),
+        "--account-statement",
+        str(statement),
+        "--snapshot-output",
+        str(snapshot),
+        "--report-output",
+        str(report),
+    ]
 
 
-def test_cli_error_does_not_overwrite_existing_snapshot(tmp_path: Path) -> None:
-    output = tmp_path / "portfolio.yaml"
-    initial = _combined(_investments(tmp_path / "initial.csv", [_investment_row()]), None)
-    assert initial.snapshot is not None
-    save_portfolio_snapshot(initial.snapshot, output)
-    previous = output.read_bytes()
-    bad = _investments(tmp_path / "bad.csv", [_investment_row(kind="UNKNOWN")])
-    result = main(["import-revolut", "--investments", str(bad), "--output", str(output), "--report", str(tmp_path / "report.txt")])
-    assert result != 0
-    assert output.read_bytes() == previous
+def test_import_revolut_cli_succeeds_creates_outputs_and_prints_safe_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    private_ticker = "PRIVATE-TICKER"
+    investments = _investments(
+        tmp_path / "investments.csv",
+        [
+            _investment_row(
+                ticker=private_ticker,
+                quantity="12.345678",
+                price="EUR 98.76",
+                total="EUR 1219.25913528",
+                currency="EUR",
+            )
+        ],
+    )
+    statement = _single_xau(tmp_path / "statement.csv", amount="0.3456", fee="0.0001")
+    snapshot = tmp_path / "generated" / "snapshots" / "portfolio.yaml"
+    report = tmp_path / "generated" / "reports" / "reconciliation.txt"
+
+    exit_code = main(_cli_arguments(investments, statement, snapshot, report))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert snapshot.is_file() and report.is_file()
+    assert load_portfolio_snapshot(snapshot).positions
+    assert "Operaciones procesadas: 2" in captured.out
+    assert "Posiciones resultantes: 2" in captured.out
+    assert "Monedas encontradas: EUR, XAU" in captured.out
+    assert "Conciliación: correcta" in captured.out
+    assert str(snapshot) in captured.out and str(report) in captured.out
+    assert captured.err == ""
+    for private_detail in (
+        private_ticker,
+        "12.345678",
+        "98.76",
+        "1219.25913528",
+        "0.3456",
+    ):
+        assert private_detail not in captured.out
+        assert private_detail not in captured.err
+
+
+def test_import_revolut_cli_missing_required_argument_exits_two(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as raised:
+        main(["import-revolut"])
+    assert raised.value.code == 2
+    assert "--investment-history" in capsys.readouterr().err
+
+
+def test_import_revolut_cli_rejects_missing_input_with_sanitized_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing = tmp_path / "customer-account-123456.csv"
+    statement = _single_xau(tmp_path / "statement.csv")
+    snapshot = tmp_path / "portfolio.yaml"
+    report = tmp_path / "report.txt"
+
+    exit_code = main(_cli_arguments(missing, statement, snapshot, report))
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "--investment-history" in captured.err
+    assert missing.name not in captured.err
+    assert not snapshot.exists() and not report.exists()
+
+
+def test_import_revolut_cli_sanitizes_import_errors_and_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    secret = "CONFIDENTIAL-TICKER"
+    investments = _investments(
+        tmp_path / "investments.csv",
+        [_investment_row(ticker=secret, kind="PRIVATE-OPERATION", total="USD 98765.43")],
+    )
+    statement = _single_xau(tmp_path / "statement.csv")
+    snapshot = tmp_path / "portfolio.yaml"
+    report = tmp_path / "report.txt"
+
+    exit_code = main(_cli_arguments(investments, statement, snapshot, report))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "los datos no son válidos" in captured.err
+    assert secret not in captured.out + captured.err
+    assert "98765.43" not in captured.out + captured.err
+    assert "PRIVATE-OPERATION" not in captured.out + captured.err
+    assert not snapshot.exists() and not report.exists()
 
 
 def test_failed_atomic_replace_preserves_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -493,8 +584,16 @@ def test_failed_atomic_replace_preserves_snapshot(tmp_path: Path, monkeypatch: p
 def test_import_cli_never_constructs_network_notifier_or_alert_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    source = _investments(tmp_path / "i.csv", [_investment_row()])
+    investments = _investments(tmp_path / "i.csv", [_investment_row()])
+    statement = _single_xau(tmp_path / "x.csv")
     monkeypatch.setattr("openportfolio.cli.NtfyNotifier", lambda: pytest.fail("no notifier"))
     monkeypatch.setattr("openportfolio.cli.JsonAlertStateStore", lambda *_: pytest.fail("no state"))
     monkeypatch.setattr("openportfolio.cli._provider", lambda *_: pytest.fail("no market provider"))
-    assert main(["import-revolut", "--input", str(source), "--output", str(tmp_path / "p.yaml"), "--report", str(tmp_path / "r.txt")]) == 0
+    assert main(
+        _cli_arguments(
+            investments,
+            statement,
+            tmp_path / "p.yaml",
+            tmp_path / "r.txt",
+        )
+    ) == 0

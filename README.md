@@ -10,34 +10,22 @@ La conversión de divisas todavía no está implementada. Los totales se muestra
 
 `import-revolut` reconstruye un snapshot local mínimo a partir de exportaciones CSV de Revolut. Admite el historial de inversiones con cabecera `Date,Ticker,Type,Quantity,Price per share,Total Amount,Currency,FX Rate` y el extracto de cuenta español usado para conversiones XAU. Funciona completamente offline: no consulta cotizaciones, no construye notifiers, no accede a `alert_state.json` y no activa ni modifica alertas o revisiones programadas.
 
-Los archivos son independientes. Se puede importar solo inversiones, solo XAU o ambos:
+El comando oficial requiere las dos exportaciones y rutas de salida explícitas. Los nombres del
+ejemplo son completamente ficticios:
 
 ```bash
 .venv/bin/openportfolio import-revolut \
-  --investments /ruta/ficticia/export-investments.csv \
-  --account-statement /ruta/ficticia/account-statement.csv \
-  --output .openportfolio/private/portfolio.yaml \
-  --report .openportfolio/private/reconciliation.txt
+  --investment-history /datos/ficticios/historial-inversiones.csv \
+  --account-statement /datos/ficticios/extracto-cuenta.csv \
+  --snapshot-output /resultados/ficticios/portfolio.yaml \
+  --report-output /resultados/ficticios/reconciliation.txt
 ```
 
-También se puede dejar que el comando identifique el formato exclusivamente por la cabecera, sin depender del nombre del archivo:
-
-```bash
-.venv/bin/openportfolio import-revolut \
-  --input /ruta/ficticia/export.csv \
-  --existing-snapshot .openportfolio/private/portfolio.yaml \
-  --output .openportfolio/private/portfolio.yaml
-```
-
-Debe indicarse al menos una de las opciones `--input`, `--investments` o `--account-statement`. `--input` se puede repetir. Si `--existing-snapshot` se omite y `--output` ya existe, ese mismo snapshot se usa como base. Cada fuente gobierna solo su partición: el historial de inversiones sustituye acciones y ETF de `revolut_investments`, mientras que el extracto sustituye XAU de `revolut_xau_statement`. Las posiciones de una fuente no recibida se conservan y una fuente aún ausente queda marcada como `not_imported`. La versión del snapshot anterior se valida antes de combinar y ningún error produce una actualización parcial.
-
-Para validar sin crear directorios ni escribir el snapshot o el informe:
-
-```bash
-.venv/bin/openportfolio import-revolut \
-  --input /ruta/ficticia/export.csv \
-  --dry-run
-```
+El formato de cada entrada se identifica por su cabecera, no por el nombre del archivo. El comando
+rechaza archivos intercambiados, ausentes o ilegibles, crea los directorios de salida cuando es
+seguro y reemplaza cada archivo de forma atómica. Si la importación no concilia, no escribe ningún
+resultado. La consola muestra únicamente contadores agregados, monedas, estado y rutas de salida;
+el detalle permanece en los archivos privados generados.
 
 ### Política contable del importador
 

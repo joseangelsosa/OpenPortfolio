@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Mapping, Sequence
 
 from openportfolio.domain import (
@@ -13,7 +14,17 @@ from openportfolio.domain import (
     PortfolioSnapshot,
     SourceImportMetadata,
 )
-from openportfolio.importers import ImportIssue, RevolutSourceResult
+from openportfolio.importers import (
+    ImportIssue,
+    RevolutSourceResult,
+    detect_revolut_format,
+    import_investments,
+    import_xau_statement,
+)
+
+
+class RevolutImportError(ValueError):
+    """The supplied files cannot be used as the expected Revolut exports."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +43,33 @@ class PortfolioImportOutcome:
     @property
     def warnings(self) -> tuple[ImportIssue, ...]:
         return tuple(issue for result in self.results for issue in result.warnings)
+
+
+def import_revolut_exports(
+    investment_history: str | Path,
+    account_statement: str | Path,
+    *,
+    generated_at: datetime | None = None,
+) -> PortfolioImportOutcome:
+    """Import a complete pair of Revolut exports using their detected headers."""
+    inputs = (
+        (ImportSource.INVESTMENTS, Path(investment_history), import_investments),
+        (ImportSource.XAU_STATEMENT, Path(account_statement), import_xau_statement),
+    )
+    results: list[RevolutSourceResult] = []
+    for expected_source, path, importer in inputs:
+        try:
+            detected_source = detect_revolut_format(path)
+        except ValueError as error:
+            raise RevolutImportError(
+                f"el archivo de {expected_source.value} no tiene un formato Revolut válido"
+            ) from error
+        if detected_source is not expected_source:
+            raise RevolutImportError(
+                f"el archivo de {expected_source.value} corresponde a otra exportación"
+            )
+        results.append(importer(path))
+    return combine_revolut_imports(results, None, generated_at=generated_at)
 
 
 def combine_revolut_imports(
